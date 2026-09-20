@@ -4,8 +4,8 @@
 
 ```text
 .github/      GitHub repository configuration
-/docs/        Documentation
-/src/         Functional code base
-/test/        Unit tests
-/deployment/  Infrastructure as Code (Terraform)
+docs/         Documentation
+src/          Functional code base
+test/         Unit tests
+deployment/   Infrastructure as Code (Terraform)
 ```
