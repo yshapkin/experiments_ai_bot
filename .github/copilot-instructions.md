@@ -1,6 +1,6 @@
 ## Tech stack
 
-- Use **Node.js** and **TypeScript**.
+- Use **Node.js** and **TypeScript** for projects intended for **Microsoft Azure**; prefer Azure-compatible designs and keep application code portable unless an approved requirement depends on an Azure-specific service.
 - Do not assume a framework, package manager, **Node.js** version, module system, or
   Azure service unless the repository configuration establishes it.
 
