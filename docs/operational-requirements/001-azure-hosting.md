@@ -121,7 +121,7 @@ workbook, alert, or action group.
 - Configure `functionAppConfig.deployment.storage` to use the deployment blob
   container and user-assigned identity authentication.
 - Configure `functionAppConfig.scaleAndConcurrency` with:
-  - `instanceMemoryMB`: `512`.
+  - `instanceMemoryMB`: `2048`.
   - `maximumInstanceCount`: `10`.
 - Require HTTPS-only access, TLS 1.2 or newer, and disable FTPS.
 - Keep the public endpoint enabled because Telegram must reach the function.
@@ -160,7 +160,7 @@ Do not output secret values, storage keys, connection strings, or signed URLs.
 - A resource-group deployment validation and what-if operation complete without
   errors.
 - Repeating the deployment with unchanged parameters produces no modifications.
-- The Function App uses the `FC1` plan, Node.js 22, 512 MB instances, a maximum
+- The Function App uses the `FC1` plan, Node.js 22, 2,048 MB instances, a maximum
   of 10 instances, and zero always-ready instances.
 - The Function App can access deployment storage, Key Vault secrets, and
   Application Insights through its managed identity.
