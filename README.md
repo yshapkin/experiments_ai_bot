@@ -1,7 +1,58 @@
 # experiments_ai_bot
 
-This repository contains one or more Node.js projects intended for deployment to
-Microsoft Azure.
+This repository contains a minimal Telegram bot built with Node.js, TypeScript,
+and grammY. It welcomes users, provides inline help, and echoes supported text.
+
+## Prerequisites
+
+- Node.js 22
+- npm
+- A Telegram bot token created through BotFather
+
+## Local setup
+
+Install the locked dependencies:
+
+```sh
+npm ci
+```
+
+Copy `.env.example` to `.env`, replace the placeholder with your token, and
+export the variable into the shell before starting the bot:
+
+```sh
+set -a
+. ./.env
+set +a
+npm run dev
+```
+
+The bot uses long polling. Keep `.env` local; it is ignored by Git. A missing or
+blank `TELEGRAM_BOT_TOKEN` stops startup before polling.
+
+## Supported behavior
+
+- `/start` sends one welcome message with a **Help** button.
+- **Help** explains the plain-text echo behavior.
+- Non-command text in private chats is echoed unchanged.
+- Commands other than `/start`, groups, channels, media, and edited messages are
+  ignored.
+
+## Validation and production build
+
+```sh
+npm run typecheck
+npm test
+npm run build
+npm start
+```
+
+`npm start` runs the compiled output and requires
+`TELEGRAM_BOT_TOKEN` in the environment.
+
+Production Azure hosting, infrastructure, webhooks, and horizontal scaling are
+outside the current specification. The bot currently runs only through local
+long polling.
 
 ## Repository structure
 
@@ -14,7 +65,7 @@ test/         Unit tests
 deployment/   Infrastructure as Code (IaC) using Bicep
 ```
 
-## Links:
+## Links
 - [Infrastructure as Code: IaC](https://learn.microsoft.com/en-us/devops/deliver/what-is-infrastructure-as-code)
 - [Bicep](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/overview?tabs=bicep)
 - [Custom agents in VS Code](https://code.visualstudio.com/docs/agent-customization/custom-agents)
