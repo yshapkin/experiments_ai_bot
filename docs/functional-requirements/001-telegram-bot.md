@@ -1,5 +1,7 @@
 # Telegram Bot
 
+**Last reviewed:** 2026-09-20
+
 ## Overview
 
 Build a minimal Telegram bot with Node.js, TypeScript, and the grammY framework.

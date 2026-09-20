@@ -1,5 +1,7 @@
 # Agent Orchestration
 
+**Last reviewed:** 2026-09-20
+
 ## Overview
 
 The goal is to create an agent workflow for this repository. The orchestration framework consists of a master agent, **Commandeer**, which coordinates three specialized agents:
