@@ -1,33 +1,53 @@
-# Repository instructions
+## Tech stack
 
-This repository is currently a scaffold. The implementation directories contain
-only `.gitkeep` placeholders; `README.md` documents their intended roles.
+- Use **Node.js** and **TypeScript**.
+- Do not assume a framework, package manager, **Node.js** version, module system, or
+  Azure service unless the repository configuration establishes it.
 
-## Platform context
+## Core engineering principles
 
-- This repository contains one or more Node.js projects intended to be hosted on
-  Microsoft Azure.
-- Treat Node.js and Azure hosting as fixed project constraints when planning,
-  implementing, and reviewing work.
-- Do not assume a Node.js version, framework, package manager, module system, or
-  Azure hosting service unless repository configuration or an approved plan
-  establishes it.
-- Prefer Azure-compatible designs and configuration. Keep application code
-  portable unless an approved requirement depends on an Azure-specific service.
+- Prefer simple, explicit, maintainable code over clever abstractions.
+- Use strict **TypeScript**. Avoid `any` unless there is a clear justification.
+- Prefer type-safe interfaces, discriminated unions, branded types, and explicit return types for public APIs.
+- Keep functions small and focused.
+- Separate business logic from transport, persistence, and framework-specific code.
+- Favor dependency injection where it improves testability.
+- Preserve existing architecture and conventions unless a change is clearly beneficial.
 
-## Code and infrastructure boundaries
+## Naming conventions
 
-Keep application code in `src/` and unit tests in the singular `test/` directory.
-Infrastructure as Code belongs in `deployment/`, which the README designates for
-Azure Bicep.
+- Use `camelCase` for variables and functions, `PascalCase` for types and classes,
+  and descriptive file names consistent with neighboring files.
 
-## Repository conventions
+## Code style
 
-- Preserve the `.gitkeep` convention when adding directories that must be tracked
-  before they contain implementation files.
-- `.gitignore` ignores `.env` and `.env.*`, but explicitly allows `.env.example`
-  for configuration examples.
-- The Node.js-oriented `.gitignore` covers multiple tools and frameworks; it does
-  not establish a Node.js version, framework, package manager, or module system.
-  Derive build, test, and lint commands from actual project configuration when
-  it is added.
+- Use modern **TypeScript** and **Node.js** patterns.
+- Prefer `async` / `await` over raw promise chains.
+- Always handle async errors intentionally.
+- Avoid unhandled promise rejections.
+- Avoid blocking the event loop with synchronous filesystem, crypto, compression, or CPU-heavy work in request paths.
+- Use `unknown` instead of `any` for untrusted data.
+
+## Error handling
+
+- Use typed application errors where possible.
+- Preserve original errors as `cause` when wrapping.
+- Log enough context to debug, but never log secrets or sensitive personal data.
+- Distinguish operational errors from programmer errors.
+- Avoid swallowing errors silently.
+- If catching an error only to rethrow it, add meaningful context or remove the catch.
+
+## Testing
+
+- Add or update tests for behavior changes.
+- Prefer focused unit tests for business logic.
+- Add integration tests for API endpoints, persistence, or external-service boundaries when relevant.
+- Test success cases, validation failures, authorization failures, and edge cases.
+- Avoid tests that depend on execution order.
+- Keep tests deterministic.
+
+## Do not
+
+- Do not commit secrets, generated artifacts, or unrelated changes.
+- Do not add dependencies when the platform or standard library already provides
+  a clear solution.
