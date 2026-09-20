@@ -48,9 +48,7 @@ workflow state only through chat context.
    its path.
 2. Read the plan and present it to the user. Stop and let the user choose:
    implement with Developer or review with Reviewer.
-3. Invoke only the agent selected by the user. Include the plan path and the
-   user's exact decision.
-4. After every invocation, read the newly appended ledger entry and report it.
+3. Invoke the agent selected by the user for the current stage. Include the plan path and the user's exact decision. After Developer completes without a blocker, invoke Reviewer for the resulting code changes before finalization.
 5. For `NEEDS_REVISION` or `REJECTED`, stop before rework. After explicit user
    approval, invoke Planner for a plan review issue or Developer for a code review
    issue. Planner must append a complete revised plan version; never permit an
