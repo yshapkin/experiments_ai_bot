@@ -72,9 +72,11 @@ specialists' lack of the `agent` tool.
   version rather than modifying an earlier version.
 - The plan file is the workflow's durable communication ledger. User decisions and
   every specialized-agent result must be appended to it.
-- Agent invocations may carry only the plan path, requested role action, and an
-  exact user decision that the receiving specialist appends before using. All
-  other substantive state and communication must be read from the plan ledger.
+- For an existing workflow, agent invocations may carry only the plan path,
+  requested role action, and exact user decision that the receiving specialist
+  appends before using. The initial Planner invocation may additionally carry the
+  complete user request and referenced resource because no plan ledger exists yet.
+  All other substantive state and communication must be read from the plan ledger.
 - The Reviewer must return findings using the structured format defined in [Review Output Format](#review-output-format).
 - The Reviewer must be able to review both plans and code changes.
 - Commandeer must stop and wait for user input at each point listed in [Stopping Rules](#stopping-rules).
