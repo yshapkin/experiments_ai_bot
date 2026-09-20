@@ -135,7 +135,7 @@ The Developer:
 
 1. Implements the approved plan.
 2. Uses the repository-selected Node.js tooling and implements Azure-related
-   configuration or Terraform only when required by the approved plan.
+   configuration or Bicep only when required by the approved plan.
 3. Does not create, revise, reinterpret, or expand the plan.
 4. Appends an implementation report to the plan ledger without changing the
    approved plan content.
