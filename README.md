@@ -50,9 +50,30 @@ npm start
 `npm start` runs the compiled output and requires
 `TELEGRAM_BOT_TOKEN` in the environment.
 
-Production Azure hosting, infrastructure, webhooks, and horizontal scaling are
-outside the current specification. The bot currently runs only through local
-long polling.
+## Azure infrastructure
+
+The resource-group-scoped Bicep definition in
+[`deployment/main.bicep`](deployment/main.bicep) provisions the low-cost Azure
+Functions Flex Consumption hosting resources defined in the
+[Azure hosting requirements](docs/operational-requirements/001-azure-hosting.md).
+It provisions infrastructure only; publishing the application, creating Key
+Vault secret values, and registering the Telegram webhook remain separate
+operational steps.
+
+Supply an environment name with the included non-secret parameter file, then
+validate or deploy it from a machine authenticated to the target subscription:
+
+```sh
+az deployment group validate \
+  --resource-group <resource-group> \
+  --template-file deployment/main.bicep \
+  --parameters deployment/main.bicepparam
+
+az deployment group what-if \
+  --resource-group <resource-group> \
+  --template-file deployment/main.bicep \
+  --parameters deployment/main.bicepparam
+```
 
 ## Repository structure
 
