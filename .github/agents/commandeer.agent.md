@@ -64,7 +64,7 @@ before using. Never pass substantive workflow state only through chat context.
 9. After code review is `APPROVED` and every task is implemented, invoke
    Developer once to append the completion record and proposed commit message.
 10. Present the proposed commit message and stop for the user's manual commit.
-   Never commit.
+    Never commit.
 
 If a specialist reports a blocker or question, read it from the ledger, present
 it to the user, stop, and pass the answer to the appropriate specialist on the
