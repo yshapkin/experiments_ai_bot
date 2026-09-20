@@ -318,10 +318,6 @@ flowchart TD
     Commandeer --> User
 ```
 
-## Open Questions
-
-<!-- List decisions that still need to be made. -->
-
 ## Limitations
 
 - The maximum number of rework attempts is three.
