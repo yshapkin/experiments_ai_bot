@@ -11,7 +11,7 @@ docs/         Documentation
 plans/        Append-only agent workflow plans and execution ledgers
 src/          Functional code base
 test/         Unit tests
-deployment/   Infrastructure as Code (IaC) use Bicep
+deployment/   Infrastructure as Code (IaC) using Bicep
 ```
 
 ## Links:
