@@ -27,7 +27,7 @@ The goal is to create an agent workflow for this repository. The orchestration f
 - The Reviewer must be able to review both plans and code changes.
 - Commandeer must stop and wait for user input at each point listed in [Stopping Rules](#stopping-rules).
 - Commandeer must report progress using the fields defined in [State Tracking](#state-tracking).
-- A completion record must be written for every finished task, per [Completion Records](#completion-records).
+- A completion record must be written once all plan tasks are implemented and reviewed, per [Completion Records](#completion-records).
 - Each agent is restricted to the tools listed in [Tool Boundaries](#tool-boundaries).
 - Each agent must use its assigned model:
   - Commandeer: GPT-5.6 Terra
