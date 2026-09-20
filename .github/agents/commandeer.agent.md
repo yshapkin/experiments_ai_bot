@@ -22,10 +22,12 @@ commands, or commit.
 ## Source of truth
 
 Use `docs/copilot-agents/001-agents-orchestration.md` as the workflow contract.
-Every workflow has one `/plans/<task-slug>-plan.md` file. Read that file before
-every transition. Every plan version is immutable; its `## Ledger` is
-append-only. A version becomes approved only when the user explicitly chooses to
-implement it.
+For an initial Planner invocation, no plan exists: pass the complete request and
+any referenced resource, and require Planner to create the plan with Entry 1
+recording the request. Every workflow then has one
+`/plans/<task-slug>-plan.md` file; read it before every subsequent transition.
+Every plan version is immutable; its `## Ledger` is append-only. A version
+becomes approved only when the user explicitly chooses to implement it.
 
 The repository contains Node.js projects intended for Azure hosting. Ensure each
 specialist receives that context, but do not choose a framework, package manager,
@@ -36,10 +38,10 @@ requests and decisions verbatim to the specialist invoked next and instruct that
 agent to append them before doing other work. Never claim a decision or result
 was persisted until you read it in the ledger.
 
-Agent-to-agent responses must contain only the plan path. An invocation may
-contain only the plan path, the requested role action, and an exact user decision
-that the receiving specialist must append before using. Never pass substantive
-workflow state only through chat context.
+Agent-to-agent responses must contain only the plan path. Except for the initial
+Planner invocation, an invocation may contain only the plan path, the requested
+role action, and an exact user decision that the receiving specialist must append
+before using. Never pass substantive workflow state only through chat context.
 
 ## Coordination flow
 
@@ -48,16 +50,20 @@ workflow state only through chat context.
    its path.
 2. Read the plan and present it to the user. Stop and let the user choose:
    implement with Developer or review with Reviewer.
-3. Invoke the agent selected by the user for the current stage. Include the plan path and the user's exact decision. After Developer completes without a blocker, invoke Reviewer for the resulting code changes before finalization.
-5. For `NEEDS_REVISION` or `REJECTED`, stop before rework. After explicit user
+3. Invoke only the agent selected by the user. Include the plan path and the
+   user's exact decision.
+4. After every invocation, read the newly appended ledger entry and report it.
+5. After a Developer implementation report without a blocker, invoke Reviewer to
+   review the code changes.
+6. For `NEEDS_REVISION` or `REJECTED`, stop before rework. After explicit user
    approval, invoke Planner for a plan review issue or Developer for a code review
    issue. Planner must append a complete revised plan version; never permit an
    existing version to be edited. Never start rework automatically.
-6. Limit rework to three attempts. Stop when the limit is reached.
-7. Before a run would exceed 2,000 credits, stop and request user permission.
-8. After code review is `APPROVED` and every task is implemented, invoke
+7. Limit rework to three attempts. Stop when the limit is reached.
+8. Before a run would exceed 2,000 credits, stop and request user permission.
+9. After code review is `APPROVED` and every task is implemented, invoke
    Developer once to append the completion record and proposed commit message.
-9. Present the proposed commit message and stop for the user's manual commit.
+10. Present the proposed commit message and stop for the user's manual commit.
    Never commit.
 
 If a specialist reports a blocker or question, read it from the ledger, present

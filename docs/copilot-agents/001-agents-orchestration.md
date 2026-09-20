@@ -72,10 +72,11 @@ specialists' lack of the `agent` tool.
   version rather than modifying an earlier version.
 - The plan file is the workflow's durable communication ledger. User decisions and
   every specialized-agent result must be appended to it.
-- For an existing workflow, agent invocations may carry only the plan path,
-  requested role action, and exact user decision that the receiving specialist
-  appends before using. The initial Planner invocation may additionally carry the
-  complete user request and referenced resource because no plan ledger exists yet.
+- The initial Planner invocation may carry the complete request and any referenced
+  resource because no plan ledger exists yet; Planner must create the plan and
+  append Entry 1 recording the request. For an existing workflow, agent
+  invocations may carry only the plan path, requested role action, and exact user
+  decision that the receiving specialist appends before using.
   All other substantive state and communication must be read from the plan ledger.
 - The Reviewer must return findings using the structured format defined in [Review Output Format](#review-output-format).
 - The Reviewer must be able to review both plans and code changes.
@@ -217,6 +218,8 @@ ledger.
 - Ledger entries persist the original request, clarifications, user decisions,
   specialized-agent outputs, blockers, implementation progress, review outcomes,
   rework outcomes, and completion.
+- Entry 1 is created by Planner and records the original request received during
+  the initial Planner invocation.
 - Commandeer reads the ledger and reports derived state to the user; it never
   writes ledger entries itself.
 
@@ -301,6 +304,7 @@ flowchart TD
     Commandeer -->|Implement plan| Developer
     Commandeer -->|Review plan or code| Reviewer
     Developer --> Commandeer
+    Commandeer -->|Implementation report without blocker| Reviewer
     Reviewer --> Commandeer
     Commandeer --> ReviewResult
     ReviewResult -->|NEEDS_REVISION or REJECTED| Stop2
