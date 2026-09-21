@@ -102,3 +102,32 @@ Add a minimal, manually triggered GitHub Actions workflow that authenticates to 
 - **Proposed commit message:** `Add infrastructure-only Azure deployment workflow`
 - **Task progress:** 3 of 3 tasks implemented
 - **Next action:** Commandeer requests Reviewer review of the code changes; Developer appends the final completion entry only after Reviewer approval is confirmed.
+
+## Review: Code Changes for Add Infrastructure-Only Deployment Action
+
+**Status:** APPROVED
+
+**User decision:** Review the implemented code changes against the approved plan, including OIDC, target-isolated concurrency, approval/what-if ordering, input safety, deployment command compatibility, and infrastructure-only scope.
+
+**Summary:** The implementation satisfies the approved three-task plan. The manual-only workflow safely supplies its resource-group input as a quoted environment variable, uses environment-scoped OIDC configuration, serializes like targets, and makes the protected deployment depend on the completed validation and what-if job.
+
+**Strengths:** `.github/workflows/deploy-infrastructure.yml` grants only `contents: read` and `id-token: write`, uses `azure/login@v2` without a stored cloud credential, and confines Azure commands to the existing resource-group-scoped Bicep entry point and parameter file. The ordered lint, build, validate, what-if, and create stages are fail-fast; the deployment name includes the run ID. `README.md` and `docs/operational-requirements/001-azure-hosting.md` consistently document the existing-resource-group bootstrap, federated identity, role-assignment capability, environment variables/protection, and exclusion of application and secret/webhook operations.
+
+**Issues:** None.
+
+**Recommendations:** Before the first production dispatch, configure required reviewers on the selected GitHub environment and federate the identity subject to that exact repository/environment combination as documented.
+
+**Next Steps:** Task progress is 3 of 3 tasks implemented. Commandeer should proceed with final approval handling: have Developer append the required completion record, then stop for the user's manual commit decision.
+
+### Entry 5: Final completion
+
+- **Actor:** Developer
+- **Received user decision:** Read the APPROVED code review and append only the required final completion record; do not change implementation or rerun validation. Record that the required progress tool already committed the implementation, so no manual commit remains necessary.
+- **Accomplishment summary:** Completed all approved work for the infrastructure-only deployment action: added the manual OIDC-authenticated Bicep workflow, documented Azure and GitHub bootstrap requirements, and validated its syntax, Bicep compilation, security boundaries, and infrastructure-only scope without deploying live resources.
+- **Files changed:** `.github/workflows/deploy-infrastructure.yml`, `README.md`, `docs/operational-requirements/001-azure-hosting.md`, and this append-only plan ledger.
+- **Final review status:** APPROVED. The Reviewer reported no issues and confirmed the implementation satisfies all three approved tasks.
+- **Validation summary and limitations:** The implementation validations recorded in Entry 4 passed, including Bicep lint/build, YAML parsing, static workflow assertions, diff checking, and the available secret-pattern scan. `actionlint`, `parallel_validation`, CodeQL, and dedicated secret-scanning tools were unavailable. Azure `validate`, `what-if`, and `create` were intentionally not run locally because they require an authorized manual OIDC dispatch; no tests, linters, or builds were rerun for this completion entry.
+- **Commit status:** The implementation was committed by the required progress tool; no manual commit remains necessary.
+- **Proposed commit message:** `Add infrastructure-only Azure deployment workflow`
+- **Task progress:** 3 of 3 tasks implemented and approved.
+- **Next action:** Commandeer reports the completed and approved workflow to the user; no implementation, review, or manual commit action remains.
