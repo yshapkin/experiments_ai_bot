@@ -26,6 +26,9 @@ param telegramBotTokenSecretName string = 'telegram-bot-token'
 @maxLength(127)
 param telegramWebhookSecretName string = 'telegram-webhook-secret'
 
+@description('When true, create or reset the declared Telegram Key Vault secrets to empty-string placeholder values. Keep false on ordinary redeployments to avoid overwriting operator-managed secrets.')
+param bootstrapTelegramSecrets bool = false
+
 var nameSuffix = take(uniqueString(resourceGroup().id, applicationName, environmentName), 6)
 var applicationNameToken = take(toLower(replace(applicationName, '-', '')), 9)
 var environmentNameToken = take(toLower(replace(environmentName, '-', '')), 4)
@@ -126,6 +129,22 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
   }
 }
 
+resource telegramBotTokenSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = if (bootstrapTelegramSecrets) {
+  parent: keyVault
+  name: telegramBotTokenSecretName
+  properties: {
+    value: ''
+  }
+}
+
+resource telegramWebhookSecret 'Microsoft.KeyVault/vaults/secrets@2024-11-01' = if (bootstrapTelegramSecrets) {
+  parent: keyVault
+  name: telegramWebhookSecretName
+  properties: {
+    value: ''
+  }
+}
+
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
@@ -221,6 +240,14 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: applicationInsights.properties.ConnectionString
         }
         {
+          name: 'OTEL_LOG_LEVEL'
+          value: 'info'
+        }
+        {
+          name: 'OTEL_NODE_DISABLED_INSTRUMENTATIONS'
+          value: 'http,undici'
+        }
+        {
           name: 'TELEGRAM_BOT_TOKEN'
           value: '@Microsoft.KeyVault(SecretUri=${keyVault.properties.vaultUri}secrets/${telegramBotTokenSecretName})'
         }
@@ -253,6 +280,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   }
   dependsOn: [
     storageBlobDataOwnerAssignment
+    telegramBotTokenSecret
+    telegramWebhookSecret
   ]
 }
 
