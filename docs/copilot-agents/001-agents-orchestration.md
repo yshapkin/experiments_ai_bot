@@ -1,327 +1,394 @@
 # Agent Orchestration
 
-**Last reviewed:** 2026-09-20
+**Last reviewed:** 2026-09-21
 
 ## Overview
 
-The goal is to create an agent workflow for this repository. The orchestration framework consists of a master agent, **Commandeer**, which coordinates three specialized agents:
+The repository uses a user-facing **Commandeer** agent to coordinate four
+specialized agents:
 
 - **Planner**
 - **Developer**
+- **Tester**
 - **Reviewer**
+
+The workflow separates the immutable implementation plan from mutable execution
+state. This keeps approved scope stable while giving agents a compact,
+authoritative handoff record.
 
 ## Repository Context
 
-- The repository contains one or more Node.js projects intended for hosting on
-  Microsoft Azure.
-- All agents must treat Node.js and Azure hosting as fixed project constraints.
-- Agents must not invent a Node.js version, framework, package manager, module
-  system, or Azure hosting service. They must derive these choices from
-  repository configuration or an approved plan and surface missing decisions
-  through the plan ledger.
+- The repository contains one or more Node.js projects intended for Microsoft
+  Azure hosting.
+- Agents derive the Node.js version, framework, package manager, module system,
+  Azure service, and deployment approach from repository configuration or an
+  approved plan.
 - Application code belongs in `/src`, tests in `/test`, and Azure Bicep
   infrastructure in `/deployment`.
+- Agent model selection is defined only in each executable `.agent.md` profile.
 
 ## Supported Environments
 
-The same agent profiles under `/.github/agents` must be available in:
+The profiles under `/.github/agents` must work in:
 
 - VS Code with GitHub Copilot;
 - GitHub.com through Copilot cloud agent;
 - GitHub Copilot CLI.
 
-The profiles omit `target`, which makes them eligible for both `vscode` and
-`github-copilot`. Copilot CLI also discovers repository agents from
-`.github/agents`.
-
 Use portable tool aliases (`agent`, `read`, `search`, `edit`, `execute`, and
-`web`) whenever a capability is needed across environments. Product-specific
-tools may be listed only as optional fallbacks; unsupported tool names are
-ignored by other environments.
+`web`) whenever a capability is needed across environments.
 
-### Starting the workflow
-
-- **VS Code:** select `Commandeer` in the Chat agent picker and submit the
-  request.
-- **GitHub.com:** merge the agent profiles into the repository's default branch,
-  open Copilot agents, select the repository and `Commandeer`, and submit the
-  request.
-- **Copilot CLI:** from the repository root run
-  `copilot --agent commandeer --prompt "<request>"`, or select `Commandeer` with
-  `/agent` in an interactive session.
-
-Planner, Developer, and Reviewer are not user-invocable. Commandeer invokes them
-through the portable `agent` tool alias. In VS Code, the `agents` property
-further limits Commandeer to those three specialists. Environments that do not
-enforce that property rely on Commandeer's explicit role restriction and the
-specialists' lack of the `agent` tool.
+Planner, Developer, Tester, and Reviewer are not user-invocable. Commandeer
+invokes them through the portable `agent` tool alias. The specialists do not
+receive the `agent` tool.
 
 ## Goals
 
-- Accept a user request from text, a file, a GitHub user story, or a GitHub issue.
-- Research the request and create an implementation plan.
-- Let the user choose whether to implement or review the plan.
-- Track workflow progress in an append-only plan ledger.
-- Review either a plan or code changes.
+- Accept a request from text, a file, a GitHub user story, or a GitHub issue.
+- Produce an implementation plan with explicit scope and acceptance criteria.
+- Preserve user control at planning, rework, and completion gates.
+- Share context through durable, reviewable artifacts instead of hidden chat
+  state.
+- Add focused unit tests when the implementation has unit-testable behavior.
+- Review either a plan or completed implementation and test changes.
+- Surface optional follow-up proposals without silently expanding scope.
 
-## Requirements
+## Workflow Artifacts
 
-- The user controls whether the workflow proceeds from planning to implementation or review.
-- Plans must be saved in the `/plans` folder using the naming and structure defined in [Plan File Convention](#plan-file-convention).
-- Only Commandeer may communicate directly with the user.
-- Planner, Developer, and Reviewer must return all results and questions to Commandeer.
-- Once written, a plan version is immutable. Rework creates a complete appended
-  version rather than modifying an earlier version.
-- The plan file is the workflow's durable communication ledger. User decisions and
-  every specialized-agent result must be appended to it.
-- The initial Planner invocation may carry the complete request and any referenced
-  resource because no plan ledger exists yet; Planner must create the plan and
-  append Entry 1 recording the request. For an existing workflow, agent
-  invocations may carry only the plan path, requested role action, and exact user
-  decision that the receiving specialist appends before using.
-  All other substantive state and communication must be read from the plan ledger.
-- The Reviewer must return findings using the structured format defined in [Review Output Format](#review-output-format).
-- The Reviewer must be able to review both plans and code changes.
-- Commandeer must stop and wait for user input at each point listed in [Stopping Rules](#stopping-rules).
-- Commandeer must report progress using the fields defined in [State Tracking](#state-tracking).
-- A completion record must be appended once all plan tasks are implemented and
-  reviewed, per [Completion Records](#completion-records).
-- Each agent is restricted to the tools listed in [Tool Boundaries](#tool-boundaries).
-- Each agent must use its assigned model:
-  - Commandeer: GPT-5.6 Terra
-  - Planner: GPT-5.6 Sol
-  - Developer: GPT-5.6 Sol
-  - Reviewer: GPT-5.6 Terra
+Each workflow uses two files with the same task slug.
 
-## Design
+### Plan file
+
+Path: `/plans/<task-slug>-plan.md`
+
+The plan is the durable task contract. It contains:
+
+```markdown
+# Plan: {Task Title}
+
+## Original Request
+
+{Verbatim request and referenced resources}
+
+## Plan Version 1
+
+**Summary:** {What, how, and why}
+
+**Scope**
+- {Included behavior or artifact}
+
+**Non-goals**
+- {Explicitly excluded behavior or artifact}
+
+**Tasks**
+1. **Task {N}: {Title}**
+   - **Objective:** {What this task achieves}
+   - **Files to change:** {Concrete files or symbols}
+   - **Steps:** {Ordered implementation steps}
+   - **Acceptance criteria:** {Measurable completion conditions}
+
+**Open Questions**
+1. {Question with choices when possible}
+```
+
+A plan version is immutable after Planner writes it. Approved rework appends a
+complete `Plan Version N` section. The run file identifies which version is
+active and approved.
+
+### Run file
+
+Path: `/plans/<task-slug>-run.md`
+
+The run file is the execution record and contains:
+
+```markdown
+# Run: {Task Title}
+
+## Current State
+
+- **Plan path:** {/plans/<task-slug>-plan.md}
+- **Active plan version:** {number or "not approved"}
+- **Stage:** Planning | Implementation | Testing | Review | Rework | Complete | Blocked
+- **Status:** {Current machine-readable status}
+- **Task progress:** {completed} of {total}
+- **Last action:** {Most recent completed transition}
+- **Next action:** {Next transition or required user decision}
+- **Rework attempts:** {0-3}
+
+## Decisions
+
+{Append-only user decisions with timestamps or sequence numbers}
+
+## Artifact Manifest
+
+{Current files and durable outputs produced by the workflow}
+
+## Reports
+
+{Append-only specialist reports}
+
+## Completion
+
+{Final summary and proposed commit message, written by Commandeer}
+```
+
+Commandeer may update `Current State`, `Artifact Manifest`, and `Completion`,
+and may append exact user decisions under `Decisions`. Specialists only append
+their own reports under `Reports`. Planner creates both files.
+
+Agents read the active plan version, current state, applicable decisions,
+artifact manifest, and latest relevant report. They do not need to reread old
+reports unless the current state references one.
+
+## Transition Contract
+
+Every specialist invocation after initial planning contains only:
+
+```yaml
+planPath: /plans/<task-slug>-plan.md
+runPath: /plans/<task-slug>-run.md
+roleAction: <requested bounded action>
+trigger: <transition trigger>
+```
+
+Allowed triggers:
+
+- `NEW_REQUEST`: initial Planner invocation before artifacts exist.
+- `USER_APPROVED`: the user approved a plan or selected a user-controlled path.
+- `PREAUTHORIZED_NEXT_STAGE`: a previously approved workflow is advancing to
+  its next non-destructive stage.
+- `AUTOMATIC_VALIDATION`: implementation is advancing to testing or review.
+- `REWORK_APPROVED`: the user approved a specific rework action.
+
+Commandeer writes exact user decisions to the run file before invoking the next
+specialist. Specialists record the trigger in their report; they never invent or
+duplicate a user decision.
+
+Every specialist report starts with:
+
+```markdown
+### Report {N}: {Actor} - {Action}
+
+- **Status:** SUCCESS | NOT_APPLICABLE | BLOCKED | FAILED | APPROVED | NEEDS_REVISION | REJECTED
+- **Trigger:** {Transition trigger}
+- **Result:** {Concise outcome}
+- **Files changed:** {Paths or "None"}
+- **Validation:** {Commands and exact outcomes or "Not applicable"}
+- **Optional proposals:** {Proposal IDs and summaries or "None"}
+- **Recommended transition:** {Next workflow action}
+```
+
+If a proposal is required to satisfy the active plan, it is a blocker or review
+finding rather than an optional proposal.
+
+## Agent Responsibilities
 
 ### Commandeer
 
-**Model:** GPT-5.6 Terra
+Commandeer is the only user-facing agent. It:
 
-The coordination-only master agent that:
+1. Sends a new request and referenced resources to Planner.
+2. Presents the plan and waits for the user to choose implementation or plan
+   review.
+3. Records user decisions and workflow transitions in the run file.
+4. Invokes specialists with the transition contract.
+5. Advances successful, non-destructive stages without requesting a duplicate
+   user decision.
+6. Presents blockers and review failures before rework.
+7. Updates the artifact manifest from specialist reports.
+8. After approval, writes the completion record and derives the proposed commit
+   message from the final artifact manifest and reports.
+9. Presents optional proposals as separate follow-up choices.
 
-1. Receives the user request as text, a file, a GitHub user story, or a GitHub issue.
-2. Passes the request to the Planner.
-3. Presents the completed plan to the user.
-4. Asks the user to choose between running the Developer or the Reviewer.
-5. Coordinates any review and rework cycles.
-6. Presents all agent results, questions, and status updates to the user without
-   editing repository or workflow files.
-7. Reports state using the [State Tracking](#state-tracking) fields on every turn.
-8. Enforces the pauses defined in [Stopping Rules](#stopping-rules).
-9. Passes each user decision to the next specialized agent so it is appended to
-   the plan ledger before work proceeds.
-10. Presents the Developer's proposed commit message to the user for manual commit.
+Commandeer does not research, plan, implement, review source, run commands,
+commit, or push. Its edit capability is limited to the run file.
 
 ### Planner
 
-**Model:** GPT-5.6 Sol
-
-The Planner:
+Planner:
 
 1. Researches the request and relevant repository context.
-2. Accounts for Node.js runtime and Azure hosting implications, including
-   application configuration, deployment, observability, and tests when relevant.
-3. Creates a clear, actionable implementation plan following the [Plan File Convention](#plan-file-convention).
-4. Saves the plan in the `/plans` folder.
-5. Appends clarifications and user decisions received through Commandeer.
-6. Returns the plan path to Commandeer for presentation to the user.
+2. Creates the plan and run files for a new request.
+3. Defines explicit scope, non-goals, concrete tasks, acceptance criteria, and
+   open questions.
+4. Appends a complete plan version for approved plan rework.
+5. Appends one planning report to the run file.
 
-The Planner never implements the plan, edits source code, or runs tests and
-builds. After Commandeer presents the plan to the user, the Planner must not
-change, remove, or renumber its summary or tasks.
+Planner does not implement, edit source or configuration, run tests or builds,
+commit, or invoke another agent.
 
 ### Developer
 
-**Model:** GPT-5.6 Sol
+Developer:
 
-The Developer:
+1. Implements only the active approved plan version.
+2. Runs existing focused tests, checks, or builds so it does not knowingly hand
+   broken code to Tester.
+3. Does not add or expand unit-test coverage assigned to Tester.
+4. Appends one implementation report, including changed files and validation
+   evidence.
 
-1. Implements the approved plan.
-2. Uses the repository-selected Node.js tooling and implements Azure-related
-   configuration or Bicep only when required by the approved plan.
-3. Does not create, revise, reinterpret, or expand the plan.
-4. Appends an implementation report to the plan ledger without changing the
-   approved plan content.
-5. Proposes a git commit message for the completed work.
-6. Appends a completion record per [Completion Records](#completion-records) after
-   implementation receives final approval.
-7. Returns the plan path to Commandeer.
+Developer does not revise the plan, perform independent review, generate the
+final commit message, invoke another agent, commit, or push.
 
-If implementation requires a missing decision or a plan change, the Developer
-must stop, append the blocker to the ledger, and return control to Commandeer.
+### Tester
+
+Tester runs after an unblocked implementation report and first determines
+testing applicability:
+
+- `SUCCESS`: unit-testable behavior exists; focused unit tests were added or
+  updated and the relevant test command passed.
+- `NOT_APPLICABLE`: no unit-testable behavior exists, with a concise reason.
+- `BLOCKED`: a production defect, missing decision, or invalid test boundary
+  prevents correct tests.
+- `FAILED`: the test command or test infrastructure failed unexpectedly.
+
+Tester covers observable behavior, validation, error handling, and relevant
+edge cases. Tester does not test dependency injection or logging and does not
+edit production source or configuration.
 
 ### Reviewer
 
-**Model:** GPT-5.6 Terra
+Reviewer can run:
 
-The Reviewer can run after either the Planner or the Developer:
+- after Planner, to review a plan selected by the user;
+- after Tester reports `SUCCESS` or `NOT_APPLICABLE`, to review implementation
+  and test changes.
 
-- After the Planner, it reviews the plan for completeness, correctness, and feasibility.
-- After the Developer, it reviews the code changes against the plan and user request.
-- It verifies relevant changes respect the established Node.js configuration and
-  are suitable for the approved Azure hosting architecture.
-- It appends findings using the [Review Output Format](#review-output-format).
-- If issues are found, it appends clear feedback for rework and returns the plan
-  path to Commandeer.
-
-The Reviewer never changes the plan, implementation, or findings produced by
-another agent. Its only write is appending its own review entry to the plan
-ledger.
+Reviewer appends one structured report and never edits reviewed content.
 
 ## Tool Boundaries
 
 | Agent | Allowed actions | Not allowed |
 |---|---|---|
-| Commandeer | Invoke Planner, Developer, Reviewer; read plan files; message the user | Edit any file; run commands, tests, or builds |
-| Planner | Read/search the repository, fetch GitHub issues, create a plan, append planning entries under `/plans` | Edit source code; run tests or builds; implement; mutate an approved plan |
-| Developer | Read/edit source code, run focused tests and builds, append implementation entries under `/plans` | Plan or change plan content; review; message the user; commit |
-| Reviewer | Read source code, diffs, and plan files; run non-mutating Git inspection commands; append review entries under `/plans` | Edit reviewed content; implement fixes; run mutating commands; message the user |
+| Commandeer | Invoke specialists; read plan and run files; edit only the run file; message the user | Research; edit plan, source, configuration, or tests; run commands; review code; commit |
+| Planner | Read/search repository; fetch a referenced issue; create or append plan versions; create the run file; append planning reports | Edit implementation files; run tests or builds; implement; commit |
+| Developer | Read/edit implementation files; run focused existing validation; append implementation reports | Revise plan; add Tester-owned unit coverage; review; message user; commit |
+| Tester | Read implementation and tests; edit focused unit tests; run relevant unit tests; append testing reports | Edit production source or configuration; test dependency injection or logging; plan; review; commit |
+| Reviewer | Read files and diffs; use non-mutating Git inspection; append review reports | Edit reviewed content; implement fixes; run mutating commands; message user; commit |
 
-## Plan File Convention
+## Review Output
 
-- File path: `/plans/<task-slug>-plan.md`, where `<task-slug>` is a kebab-case summary of the request.
-- Required structure:
-
-```markdown
-## Plan: {Task Title}
-
-{1-3 sentence summary of what, how, and why.}
-
-**Tasks**
-1. **Task {N}: {Title}**
-   - **Objective:** {What this task achieves}
-   - **Files to change:** {List of files/functions}
-   - **Steps:** {Ordered steps}
-   - **Acceptance criteria:** {Measurable completion conditions}
-
-**Open Questions**
-1. {Clarifying question, with options if applicable}
-
-## Ledger
-
-### Entry {N}: {Entry type}
-
-- **Actor:** User | Planner | Developer | Reviewer
-- **Decision or result:** {Persisted decision, report, blocker, or finding}
-- **Task progress:** {completed} of {total} tasks implemented
-- **Next action:** {Action requiring Commandeer coordination}
-```
-
-- Commandeer treats a plan version as approved only after the user explicitly
-  chooses to implement it.
-- No agent may edit an existing plan version's summary, tasks, open questions,
-  task numbering, objectives, scope, or acceptance criteria.
-- Planner, Developer, and Reviewer may only append new, sequential entries under
-  `## Ledger`.
-- When plan rework is approved, Planner appends a complete revised plan version
-  as a ledger entry. It becomes active only after explicit user approval.
-- Ledger entries persist the original request, clarifications, user decisions,
-  specialized-agent outputs, blockers, implementation progress, review outcomes,
-  rework outcomes, and completion.
-- Entry 1 is created by Planner and records the original request received during
-  the initial Planner invocation.
-- Commandeer reads the ledger and reports derived state to the user; it never
-  writes ledger entries itself.
-
-## Review Output Format
-
-The Reviewer always appends this structure to the plan ledger:
+Reviewer includes this detail after the common report fields:
 
 ```markdown
-## Review: {Plan or Code Changes for <task title>}
+#### Review: {Plan or Code Changes}
 
-**Status:** APPROVED | NEEDS_REVISION | REJECTED
-
-**Summary:** {1-2 sentence overall assessment}
+**Summary:** {Overall assessment}
 
 **Strengths:** {What was done well}
 
 **Issues:** {If none, say "None"}
-- **[CRITICAL | MAJOR | MINOR]** {Issue description with file/task reference}
+- **[CRITICAL | MAJOR | MINOR]** {Issue with concrete reference}
 
-**Recommendations:** {Specific, actionable suggestions}
-
-**Next Steps:** {What Commandeer should do next}
+**Recommendations:** {Specific advisory actions}
 ```
+
+Status meanings:
+
+- `APPROVED`: no material issues remain.
+- `NEEDS_REVISION`: specific correctable issues remain.
+- `REJECTED`: the approach is fundamentally unsafe, infeasible, or contrary to
+  the request.
+
+## Coordination Flow
+
+1. Commandeer invokes Planner with `NEW_REQUEST`.
+2. Planner creates the plan and run files and returns their paths.
+3. Commandeer presents the plan and waits for the user to choose implementation
+   or plan review.
+4. Commandeer records the decision and invokes the selected agent with
+   `USER_APPROVED`.
+5. After Developer reports `SUCCESS`, Commandeer invokes Tester with
+   `AUTOMATIC_VALIDATION`.
+6. After Tester reports `SUCCESS` or `NOT_APPLICABLE`, Commandeer invokes
+   Reviewer with `AUTOMATIC_VALIDATION`.
+7. A blocker, failure, `NEEDS_REVISION`, or `REJECTED` result stops the workflow.
+   Commandeer presents it and waits for explicit rework approval.
+8. After code review reports `APPROVED`, Commandeer writes the completion record
+   and final proposed commit message.
+9. Commandeer presents delivered artifacts, validation evidence, deviations,
+   decisions required, and optional proposals, then waits for the user's manual
+   commit or next request.
 
 ## Stopping Rules
 
-Commandeer must pause and wait for explicit user input at:
+Commandeer waits for explicit user input:
 
-1. After the Planner returns the plan, before the user chooses Developer or Reviewer.
-2. After the Reviewer returns a `NEEDS_REVISION` or `REJECTED` status, before starting rework.
-3. After final review approval and the Developer appends the completion record
-   and proposed commit message, before the user commits.
-4. After the maximum rework attempts (see [Limitations](#limitations)) is reached.
-5. Before exceeding the per-run credit limit (see [Limitations](#limitations)).
+1. After planning, before implementation or plan review.
+2. After any blocker or unexpected failure.
+3. After `NEEDS_REVISION` or `REJECTED`, before rework.
+4. After three rework attempts.
+5. After completion, before any commit, deployment, or follow-up proposal.
+
+No duplicate approval is required for preauthorized testing and review stages.
 
 ## State Tracking
 
-On every turn, Commandeer reports:
+Every user-facing response contains:
 
-- **Current stage:** Planning | Implementation | Review | Rework | Complete
+- **Current stage:** Planning | Implementation | Testing | Review | Rework | Complete | Blocked
 - **Task progress:** `{completed}` of `{total}` tasks implemented
-- **Last action:** What was just completed
-- **Next action:** What happens next, pending user confirmation
+- **Last action:** last persisted state transition
+- **Next action:** next transition or required user confirmation
 
-## Completion Records
+These fields are derived from `Current State` in the run file.
 
-- The completion record is the final ledger entry in
-  `/plans/<task-slug>-plan.md`; no separate completion file is created.
-- The Developer appends it only after all plan tasks are implemented and the
-  Reviewer has approved the code changes.
-- Required contents:
-  - Summary of what was accomplished.
-  - List of files changed.
-  - Final review status.
-  - Proposed git commit message.
+## Completion
+
+Commandeer writes completion only after:
+
+- all active plan tasks are implemented;
+- Tester reports `SUCCESS` or `NOT_APPLICABLE`;
+- Reviewer reports `APPROVED`.
+
+Completion contains:
+
+- accomplishment summary;
+- final artifact manifest;
+- validation summary;
+- final review status;
+- deviations from the active plan, or `None`;
+- optional proposals;
+- proposed Git commit message.
+
+No additional Developer invocation is required for documentation-only
+finalization.
 
 ## Workflow
 
 ```mermaid
 flowchart TD
-    User["User request<br/>Text, file, GitHub user story, or issue"]
-    Commandeer["Commandeer<br/>Only user-facing agent"]
-    Planner["Planner<br/>Research and create plan"]
-    Plan["Plan saved in /plans/&lt;task-slug&gt;-plan.md"]
-    Stop1(("Stop 1<br/>Wait for user choice"))
-    Decision{"User chooses next action<br/>through Commandeer"}
-    Developer["Developer<br/>Implement approved plan,<br/>append report and commit message"]
-    Reviewer["Reviewer<br/>Append structured review<br/>APPROVED / NEEDS_REVISION / REJECTED"]
-    ReviewResult{"Commandeer evaluates review"}
-    Stop2(("Stop 2<br/>Before rework"))
-    Stop3(("Stop 3<br/>Before user commits"))
-    Finalize["Developer<br/>Append completion record"]
-    CompleteRecord["Completion record appended<br/>to the plan ledger"]
+    User["User request"]
+    Commandeer["Commandeer<br/>User communication and run state"]
+    Planner["Planner<br/>Plan and task contract"]
+    Gate1{"User chooses<br/>implement or plan review"}
+    Developer["Developer<br/>Implementation and existing checks"]
+    Tester{"Tester<br/>Unit testing applicable?"}
+    Reviewer["Reviewer<br/>Plan or code review"]
+    Result{"Result"}
+    Gate2["User rework approval"]
+    Complete["Commandeer<br/>Completion and commit proposal"]
 
     User --> Commandeer
     Commandeer --> Planner
-    Planner --> Plan
-    Plan --> Commandeer
-    Commandeer --> Stop1
-    Stop1 --> Decision
-    Decision --> Commandeer
-    Commandeer -->|Implement plan| Developer
-    Commandeer -->|Review plan or code| Reviewer
-    Developer --> Commandeer
-    Commandeer -->|Implementation report without blocker| Reviewer
-    Reviewer --> Commandeer
-    Commandeer --> ReviewResult
-    ReviewResult -->|NEEDS_REVISION or REJECTED| Stop2
-    Stop2 -->|Plan issue| Planner
-    Stop2 -->|Code issue| Developer
-    ReviewResult -->|APPROVED, tasks remain| Stop1
-    ReviewResult -->|APPROVED, all tasks done| Finalize
-    Finalize --> CompleteRecord
-    CompleteRecord --> Stop3
-    Stop3 --> Commandeer
-    Commandeer --> User
+    Planner --> Commandeer
+    Commandeer --> Gate1
+    Gate1 -->|Implement| Developer
+    Gate1 -->|Review plan| Reviewer
+    Developer -->|SUCCESS| Tester
+    Tester -->|SUCCESS| Reviewer
+    Tester -->|NOT_APPLICABLE| Reviewer
+    Reviewer --> Result
+    Result -->|APPROVED code| Complete
+    Result -->|APPROVED plan| Commandeer
+    Result -->|BLOCKED / FAILED / NEEDS_REVISION / REJECTED| Gate2
+    Gate2 -->|Plan rework| Planner
+    Gate2 -->|Code rework| Developer
+    Complete --> User
 ```
 
-## Limitations
+## Limits
 
-- The maximum number of rework attempts is three.
-- Each run must use no more than 2,000 credits. Commandeer must ask the user for permission before exceeding this limit.
+- Rework is limited to three user-approved attempts.
 - Only OpenAI models may be used.
