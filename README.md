@@ -75,6 +75,44 @@ az deployment group what-if \
   --parameters deployment/main.bicepparam
 ```
 
+### Manual infrastructure deployment
+
+The **Deploy Azure infrastructure** GitHub Actions workflow deploys only the
+existing Bicep template. It does not build or publish the Node.js application,
+create secret values, register a Telegram webhook, or create a resource group.
+
+Before using the workflow, an authorized Azure administrator must:
+
+1. Create the target resource group.
+2. Create a Microsoft Entra workload identity (an application/service principal
+   or user-assigned managed identity) and add a GitHub federated credential
+   restricted to this repository and the selected GitHub environment.
+3. Grant the identity resource-group-scoped permissions to manage the declared
+   resources and create their role assignments. For example, grant
+   **Contributor** and **User Access Administrator** no wider than the target
+   resource group.
+4. Create the GitHub environment (normally `production`) and define these
+   environment variables:
+   - `AZURE_CLIENT_ID`
+   - `AZURE_TENANT_ID`
+   - `AZURE_SUBSCRIPTION_ID`
+
+These identifiers are non-secret configuration; no Azure client secret or
+credential JSON is used. Configure required reviewers and other protection
+rules on the production environment.
+
+To deploy, open **Actions**, select **Deploy Azure infrastructure**, choose
+**Run workflow**, enter the existing resource-group name, and select the GitHub
+environment. The workflow uses OIDC to authenticate, then runs Bicep lint,
+build, Azure validation, and what-if before a separate deployment job. Because
+the Azure IDs are environment-scoped, approve the validation job first; then
+inspect its what-if output before approving the protected deployment job. Runs
+for the same environment and resource group are serialized.
+
+The parameter value `environmentName = 'prod'` remains fixed in
+`deployment/main.bicepparam`; the GitHub environment input does not override
+Bicep parameters.
+
 ## Repository structure
 
 ```text
