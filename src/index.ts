@@ -1,3 +1,5 @@
+import "./telemetry.js";
+
 import { createBot } from "./bot.js";
 import { loadConfig } from "./config.js";
 import { createLogger } from "./logger.js";

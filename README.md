@@ -59,6 +59,10 @@ npm start
 - The webhook URL is fixed and non-secret. Authentication relies on the
   `X-Telegram-Bot-Api-Secret-Token` header value stored in Key Vault.
 - Production workers are stateless and do not start grammY long polling.
+- The Functions host uses OpenTelemetry mode, while the Node worker exports only
+  console logs to workspace-backed Application Insights over managed identity.
+  Outbound HTTP dependency auto-instrumentation stays disabled so Telegram Bot
+  API URLs containing the bot token are never emitted as telemetry.
 - Telegram may retry failed or ambiguous deliveries, so duplicate updates are
   possible in V1.
 

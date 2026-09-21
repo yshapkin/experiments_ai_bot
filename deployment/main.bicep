@@ -240,12 +240,12 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: applicationInsights.properties.ConnectionString
         }
         {
-          name: 'OTEL_LOG_LEVEL'
-          value: 'info'
+          name: 'APPLICATIONINSIGHTS_INSTRUMENTATION_LOGGING_LEVEL'
+          value: 'INFO'
         }
         {
-          name: 'OTEL_NODE_DISABLED_INSTRUMENTATIONS'
-          value: 'http,undici'
+          name: 'NODE_OPTIONS'
+          value: '--import @azure/monitor-opentelemetry/loader'
         }
         {
           name: 'TELEGRAM_BOT_TOKEN'

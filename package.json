@@ -18,6 +18,8 @@
   },
   "dependencies": {
     "@azure/functions": "4.16.5",
+    "@azure/identity": "^4.13.3",
+    "@azure/monitor-opentelemetry": "^1.20.0",
     "grammy": "1.46.0"
   },
   "devDependencies": {

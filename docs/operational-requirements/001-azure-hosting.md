@@ -110,9 +110,12 @@ workbook, alert, or action group.
 - Configure `APPLICATIONINSIGHTS_CONNECTION_STRING` and
   `APPLICATIONINSIGHTS_AUTHENTICATION_STRING` for managed-identity
   authentication.
-- Configure OpenTelemetry logging at `info`.
-- Disable outbound Node.js HTTP auto-instrumentation so telemetry does not emit
-  Telegram Bot API dependency URLs that embed the bot token in the path.
+- Set `telemetryMode` to `OpenTelemetry` in `host.json`.
+- Start the Node.js worker with the Azure Monitor OpenTelemetry ESM loader.
+- Export application console logs at `info`.
+- Disable Node.js outbound HTTP dependency auto-instrumentation so telemetry
+  does not emit Telegram Bot API dependency URLs that embed the bot token in
+  the path.
 - Use Azure Monitor Metrics for built-in Function App platform metrics. Do not
   create diagnostic settings that duplicate Application Insights telemetry in
   the Log Analytics workspace.

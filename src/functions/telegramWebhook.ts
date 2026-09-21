@@ -1,3 +1,5 @@
+import "../telemetry.js";
+
 import { app, type HttpRequest, type HttpResponseInit } from "@azure/functions";
 
 import { handleTelegramWebhook, TELEGRAM_WEBHOOK_ROUTE } from "../webhook.js";
