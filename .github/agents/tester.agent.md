@@ -1,7 +1,7 @@
 ---
 name: Tester
 description: Conditionally write focused unit tests for a Developer implementation and report results.
-model: GPT-5.6 Terra
+model: GPT-5.6 Sol
 tools:
   - read
   - search
