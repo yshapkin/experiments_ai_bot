@@ -8,7 +8,8 @@ Provision the minimum Azure infrastructure required to host the Telegram bot as
 a Node.js Azure Function. Infrastructure must be defined in Bicep and optimized
 for a low-traffic, low-cost production workload.
 
-This document covers infrastructure provisioning only. Building, publishing,
+This document covers infrastructure provisioning only, including the manual
+GitHub Actions workflow for the existing Bicep template. Building, publishing,
 starting, or otherwise operating the bot application is out of scope.
 
 ## Goals
@@ -154,6 +155,45 @@ Return only non-secret values:
 
 Do not output secret values, storage keys, connection strings, or signed URLs.
 
+## Deployment automation prerequisites
+
+The infrastructure workflow deploys into an existing resource group. An
+authorized Azure administrator must perform this one-time bootstrap outside the
+workflow:
+
+1. Create the target resource group.
+2. Create a Microsoft Entra workload identity, using either an
+   application/service principal or a user-assigned managed identity.
+3. Configure a GitHub federated credential whose subject is restricted to this
+   repository and the selected GitHub environment.
+4. Grant the deployment identity resource-group-scoped rights to manage the
+   declared resources and create the role assignments in this template. For
+   example, **Contributor** plus **User Access Administrator** at the target
+   resource group supplies those capabilities. Do not grant broader scope than
+   required.
+5. Create the GitHub environment, normally `production`, and add the
+   non-secret environment variables `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and
+   `AZURE_SUBSCRIPTION_ID`. Apply required reviewers and appropriate production
+   protection rules.
+
+The client, tenant, and subscription IDs are configuration rather than secrets
+or Bicep parameters. The workflow uses GitHub OIDC and does not store a client
+secret, publish profile, or Azure credential JSON.
+
+An operator manually dispatches **Deploy Azure infrastructure**, supplies the
+existing resource-group name, and selects the GitHub environment. The workflow
+serializes deployments to the same environment and resource group. It runs
+Bicep lint and build, Azure deployment validation, and what-if in order. The
+environment-scoped IDs require approval of the validation job first. Deployment
+is a separate protected-environment job, so the operator must inspect the
+what-if output before approving that job. The workflow then deploys
+`deployment/main.bicep` with `deployment/main.bicepparam`, which fixes
+`environmentName` to `prod`.
+
+This automation does not create the resource group or deployment identity,
+assign bootstrap permissions, provision secrets, build or publish application
+code, or operate the Telegram webhook.
+
 ## Acceptance criteria
 
 - `az bicep build` completes without errors.
@@ -185,7 +225,7 @@ Do not output secret values, storage keys, connection strings, or signed URLs.
 - Registering, updating, or deleting the Telegram webhook.
 - Creating or rotating Key Vault secret values.
 - Creating the Azure resource group or assigning deployment permissions.
-- CI/CD pipelines and application deployment automation.
+- Automatic deployment triggers and application deployment automation.
 - Application-level telemetry sampling configuration.
 - Azure Monitor alerts, action groups, dashboards, and workbooks.
 - Custom domains, certificates, private networking, and disaster recovery.

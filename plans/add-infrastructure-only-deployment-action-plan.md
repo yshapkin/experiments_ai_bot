@@ -55,3 +55,50 @@ Add a minimal, manually triggered GitHub Actions workflow that authenticates to 
 - **Decision or result:** Created a minimal infrastructure-only plan based on the existing resource-group-scoped `deployment/main.bicep` and `deployment/main.bicepparam`. Repository choices remain unchanged: Node.js 22, npm, TypeScript ES modules, and Azure Functions Flex Consumption; the workflow intentionally does not invoke the application toolchain. No existing workflow or repository workflow-validation tool was found. The plan uses manual dispatch, GitHub environment protection, secretless Azure OIDC, narrow GitHub permissions, ordered Bicep lint/build/validate/what-if/create stages, and documents the external Azure bootstrap needed for role-assignment-capable deployments. No live Azure operation is part of implementation validation.
 - **Task progress:** 0 of 3 tasks implemented
 - **Next action:** Commandeer presents the plan and waits for the user's explicit choice of Developer implementation or Reviewer plan review.
+
+### Entry 3: User decision
+
+- **Actor:** User
+- **Decision or result:** Exact user decision received:
+
+  > Implement the plan:
+  >
+  > 1. Add a manually triggered GitHub Actions workflow that deploys only the existing Bicep infrastructure:
+  >    - Authenticate to Azure using OIDC, without stored credentials.
+  >    - Run Bicep lint/build, Azure validation, and what-if before deployment.
+  >    - Prevent concurrent deployments to the same target.
+  >    - Exclude application builds, publishing, and secret provisioning.
+  >
+  > 2. Document prerequisites: an existing resource group, Azure federated identity, deployment permissions, and GitHub environment configuration.
+  >
+  > 3. Validate workflow syntax, Bicep compilation, and infrastructure-only scope without deploying live resources.
+  >
+  > **Current stage:** Planning
+  > **Task progress:** 0 of 3 tasks implemented
+  > **Last action:** Planner recorded the proposed plan.
+  > **Next action:** Choose **implement with Developer** or **review with Reviewer**.
+- **Task progress:** 0 of 3 tasks implemented
+- **Next action:** Developer implements the explicitly approved plan without live Azure operations.
+
+### Entry 4: Implementation result
+
+- **Actor:** Developer
+- **Received user decision:** Implement the approved three-task plan: add a manually dispatched, OIDC-authenticated, infrastructure-only Bicep workflow; document Azure/GitHub prerequisites; and validate syntax, Bicep compilation, and scope without a live deployment.
+- **Decision or result:** Completed Task 1, Task 2, and Task 3 without dispatching the workflow or performing Azure control-plane/data-plane operations. Added a manual-only workflow with `contents: read` and `id-token: write`, target-specific concurrency, environment-scoped OIDC configuration, ordered lint/build/validate/what-if stages, and a separately protected Bicep deployment job. Documented existing-resource-group bootstrap, federated identity, resource-group-scoped resource and role-assignment permissions, environment variables/protection, dispatch operation, and infrastructure-only exclusions.
+- **Tasks completed:** Task 1: Add the infrastructure deployment workflow; Task 2: Document Azure and GitHub bootstrap; Task 3: Validate the workflow without deploying.
+- **Files changed:** `.github/workflows/deploy-infrastructure.yml` (new), `README.md`, `docs/operational-requirements/001-azure-hosting.md`, and this append-only plan ledger.
+- **Validation commands and outcomes:**
+  - `az bicep version` — exited 0; Bicep CLI `0.46.1 (545b338e2c)`.
+  - `az bicep lint --file deployment/main.bicep` — exited 0 with no output or warnings.
+  - `az bicep build --file deployment/main.bicep` — exited 0 with no output; generated `deployment/main.json` was removed after compilation.
+  - Ruby `Psych.parse_file` against `.github/workflows/deploy-infrastructure.yml` — exited 0 with `workflow YAML parsed successfully`.
+  - Node static workflow assertions for required trigger/permissions/OIDC/Bicep commands, command order, input handling, and forbidden automatic/application/secret-provisioning content — exited 0 with `workflow scope, command order, and input handling checks passed`.
+  - `git diff --check` — final run exited 0 with no output. An initial run identified trailing spaces in the exact-decision ledger quotation; those formatting defects were removed before the final run.
+  - Changed-file `grep -En` secret-pattern scan covering the workflow, documentation, and plan ledger — exited 0 with `all changed-file secret pattern scan passed`; `gitleaks`, `detect-secrets`, and `trufflehog` were unavailable.
+  - `git status --short` — only the expected workflow, documentation, and ledger changes remain; no generated Bicep JSON remains.
+  - One intermediate combined YAML/static-check shell command exited 1 with Bash `bad substitution` because the test command allowed shell expansion of a GitHub expression; the command was corrected, then the same YAML and static constraints passed.
+- **Unavailable validation tooling:** `actionlint`, `parallel_validation`, and `codeql` were not available, so `parallel_validation` with CodeQL `isTrivial: false` could not be invoked. No dedicated Bicep skill tool was exposed; validation used the repository-established Azure CLI Bicep commands. Workflow syntax and semantics received the structured local checks listed above.
+- **Blockers, failures, or remaining tasks:** No blockers or remaining implementation tasks. Azure `validate`, `what-if`, and `create` were intentionally not run locally because they require authorized OIDC dispatch and the plan prohibits live Azure operations during implementation.
+- **Proposed commit message:** `Add infrastructure-only Azure deployment workflow`
+- **Task progress:** 3 of 3 tasks implemented
+- **Next action:** Commandeer requests Reviewer review of the code changes; Developer appends the final completion entry only after Reviewer approval is confirmed.

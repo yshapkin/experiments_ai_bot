@@ -1,0 +1,100 @@
+name: Deploy Azure infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      resource_group:
+        description: Existing Azure resource group to deploy into
+        required: true
+        type: string
+      environment:
+        description: GitHub deployment environment
+        required: true
+        default: production
+        type: environment
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: infrastructure-${{ inputs.environment }}-${{ inputs.resource_group }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    name: Validate and preview infrastructure
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      RESOURCE_GROUP: ${{ inputs.resource_group }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Lint Bicep
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep lint --file deployment/main.bicep
+
+      - name: Build Bicep
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep build --file deployment/main.bicep
+
+      - name: Validate Azure deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment group validate \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file deployment/main.bicep \
+            --parameters deployment/main.bicepparam
+
+      - name: Preview Azure deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file deployment/main.bicep \
+            --parameters deployment/main.bicepparam
+
+  deploy:
+    name: Deploy infrastructure
+    needs: validate
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    env:
+      RESOURCE_GROUP: ${{ inputs.resource_group }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Azure infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment group create \
+            --name "infrastructure-${{ github.run_id }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file deployment/main.bicep \
+            --parameters deployment/main.bicepparam
