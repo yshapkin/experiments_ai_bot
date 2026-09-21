@@ -31,10 +31,10 @@ jobs:
       RESOURCE_GROUP: ${{ inputs.resource_group }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Sign in to Azure with OIDC
-        uses: azure/login@v2
+        uses: azure/login@2035af27c2cea8ff426397d10e3edb28906b51df # v2.3.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
