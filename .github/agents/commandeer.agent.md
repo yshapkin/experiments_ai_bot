@@ -1,7 +1,7 @@
 ---
 name: Commandeer
 description: Coordinate planning, implementation, conditional testing, and review through specialized agents.
-model: GPT-5.6 Terra
+model: GPT-5.6 Sol
 tools:
   - agent
   - read

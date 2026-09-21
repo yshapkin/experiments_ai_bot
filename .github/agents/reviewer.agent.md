@@ -1,7 +1,7 @@
 ---
 name: Reviewer
 description: Review an active plan or completed implementation and test changes without modifying them.
-model: GPT-5.6 Terra
+model: GPT-5.6 Sol
 tools:
   - read
   - search
