@@ -41,17 +41,19 @@ jobs:
             fi
           done
 
-          if ! az bicep lint --file deployment/main.bicep --diagnostics-format sarif > "$lint_results" 2> "$lint_diagnostics"; then
-            cat "$lint_diagnostics"
-            cat "$lint_results"
-            exit 1
-          fi
-          if ! jq -e 'all(.runs[]?.results[]?; .level != "warning" and .level != "error")' "$lint_results" > /dev/null; then
-            echo "::error file=deployment/main.bicep::Bicep linter reported issues."
-            cat "$lint_diagnostics"
-            cat "$lint_results"
-            exit 1
-          fi
+          for file in deployment/main.bicep deployment/main.bicepparam; do
+            if ! az bicep lint --file "$file" --diagnostics-format sarif > "$lint_results" 2> "$lint_diagnostics"; then
+              cat "$lint_diagnostics"
+              cat "$lint_results"
+              exit 1
+            fi
+            if ! jq -e 'all(.runs[]?.results[]?; (.level // "warning") != "warning" and (.level // "warning") != "error")' "$lint_results" > /dev/null; then
+              echo "::error file=$file::Bicep linter reported issues."
+              cat "$lint_diagnostics"
+              cat "$lint_results"
+              exit 1
+            fi
+          done
           az bicep build --file deployment/main.bicep --stdout > /dev/null
           az bicep build-params --file deployment/main.bicepparam --stdout > /dev/null
 
