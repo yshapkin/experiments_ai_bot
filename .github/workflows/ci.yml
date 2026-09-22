@@ -29,14 +29,22 @@ jobs:
           set -euo pipefail
 
           formatted_file="$(mktemp)"
-          trap 'rm -f "$formatted_file"' EXIT
+          lint_results="$(mktemp)"
+          trap 'rm -f "$formatted_file" "$lint_results"' EXIT
 
           for file in deployment/main.bicep deployment/main.bicepparam; do
             az bicep format --file "$file" --stdout > "$formatted_file"
-            diff -u "$file" "$formatted_file"
+            if ! diff -u "$file" "$formatted_file"; then
+              echo "::error file=$file::Run 'az bicep format --file $file' to fix formatting."
+              exit 1
+            fi
           done
 
-          az bicep lint --file deployment/main.bicep
+          az bicep lint --file deployment/main.bicep --diagnostics-format sarif > "$lint_results"
+          if ! jq -e 'all(.runs[]?.results[]?; .level != "warning")' "$lint_results" > /dev/null; then
+            cat "$lint_results"
+            exit 1
+          fi
           az bicep build --file deployment/main.bicep --stdout > /dev/null
           az bicep build-params --file deployment/main.bicepparam --stdout > /dev/null
 
