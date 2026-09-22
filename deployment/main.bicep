@@ -330,3 +330,4 @@ output managedIdentityClientId string = managedIdentity.properties.clientId
 
 @description('User-assigned managed identity principal ID.')
 output managedIdentityPrincipalId string = managedIdentity.properties.principalId
+

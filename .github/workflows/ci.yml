@@ -23,6 +23,40 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+      - name: Validate Bicep
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          formatted_file="$(mktemp)"
+          lint_results="$(mktemp)"
+          lint_diagnostics="$(mktemp)"
+          trap 'rm -f "$formatted_file" "$lint_results" "$lint_diagnostics"' EXIT
+
+          for file in deployment/main.bicep deployment/main.bicepparam; do
+            az bicep format --file "$file" --stdout > "$formatted_file"
+            if ! diff -u "$file" "$formatted_file"; then
+              echo "::error file=$file::Run 'az bicep format --file $file' to fix formatting."
+              exit 1
+            fi
+          done
+
+          for file in deployment/main.bicep deployment/main.bicepparam; do
+            if ! az bicep lint --file "$file" --diagnostics-format sarif > "$lint_results" 2> "$lint_diagnostics"; then
+              cat "$lint_diagnostics"
+              cat "$lint_results"
+              exit 1
+            fi
+            if ! jq -e 'all(.runs[]?.results[]?; (.level // "warning") != "warning" and (.level // "warning") != "error")' "$lint_results" > /dev/null; then
+              echo "::error file=$file::Bicep linter reported issues."
+              cat "$lint_diagnostics"
+              cat "$lint_results"
+              exit 1
+            fi
+          done
+          az bicep build --file deployment/main.bicep --stdout > /dev/null
+          az bicep build-params --file deployment/main.bicepparam --stdout > /dev/null
+
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
