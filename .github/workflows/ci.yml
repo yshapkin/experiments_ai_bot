@@ -40,8 +40,9 @@ jobs:
             fi
           done
 
-          az bicep lint --file deployment/main.bicep --diagnostics-format sarif > "$lint_results"
+          az bicep lint --file deployment/main.bicep --diagnostics-format sarif > "$lint_results" 2>&1
           if ! jq -e 'all(.runs[]?.results[]?; .level != "warning")' "$lint_results" > /dev/null; then
+            echo "::error file=deployment/main.bicep::Bicep linter reported warnings."
             cat "$lint_results"
             exit 1
           fi
