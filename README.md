@@ -2,6 +2,8 @@
 
 This repository contains a minimal Telegram bot built with Node.js, TypeScript,
 and grammY. It welcomes users, provides inline help, and echoes supported text.
+Local development uses long polling. Production uses an Azure Functions HTTP
+webhook.
 
 ## Prerequisites
 
@@ -27,8 +29,9 @@ set +a
 npm run dev
 ```
 
-The bot uses long polling. Keep `.env` local; it is ignored by Git. A missing or
-blank `TELEGRAM_BOT_TOKEN` stops startup before polling.
+The bot uses long polling for local development only. Keep `.env` local; it is
+ignored by Git. A missing or blank `TELEGRAM_BOT_TOKEN` stops startup before
+polling.
 
 ## Supported behavior
 
@@ -49,6 +52,32 @@ npm start
 
 `npm start` runs the compiled output and requires
 `TELEGRAM_BOT_TOKEN` in the environment.
+
+## Production runtime and webhook
+
+- Azure Functions serves `POST /api/telegram/webhook`.
+- The webhook URL is fixed and non-secret. Authentication relies on the
+  `X-Telegram-Bot-Api-Secret-Token` header value stored in Key Vault.
+- Production workers are stateless and do not start grammY long polling.
+- The Functions host uses OpenTelemetry mode, while the Node worker exports only
+  console logs to workspace-backed Application Insights over managed identity.
+  Outbound HTTP dependency auto-instrumentation stays disabled so Telegram Bot
+  API URLs containing the bot token are never emitted as telemetry.
+- Telegram may retry failed or ambiguous deliveries, so duplicate updates are
+  possible in V1.
+
+After publishing the function package and setting both Key Vault secrets, an
+operator registers the webhook once with the Telegram Bot API:
+
+```sh
+curl --fail --silent --show-error \
+  --data-urlencode "url=https://<function-app-host>/api/telegram/webhook" \
+  --data-urlencode "secret_token=<telegram-webhook-secret>" \
+  "https://api.telegram.org/bot<telegram-bot-token>/setWebhook"
+```
+
+Do not perform webhook registration during application startup or on every cold
+start.
 
 ## Azure infrastructure
 
@@ -112,6 +141,43 @@ for the same environment and resource group are serialized.
 The parameter value `environmentName = 'prod'` remains fixed in
 `deployment/main.bicepparam`; the GitHub environment input does not override
 Bicep parameters.
+
+### Key Vault secret bootstrap
+
+The Bicep template includes an explicit bootstrap switch for creating the two
+required Key Vault secrets with empty-string placeholder values:
+
+```sh
+az deployment group create \
+  --resource-group <resource-group> \
+  --template-file deployment/main.bicep \
+  --parameters deployment/main.bicepparam \
+  --parameters bootstrapTelegramSecrets=true
+```
+
+Use that switch only when you intentionally want ARM to create or reset the
+placeholder secrets. Leave it unset or `false` for ordinary redeployments so
+operator-populated secret values are not overwritten.
+
+The current `Microsoft.KeyVault/vaults/secrets@2024-11-01` schema declares the
+secret `properties.value` as a string without a minimum length, which is the
+basis for using an empty string here. Live Azure validation still requires real
+deployment credentials.
+
+The placeholders are intentionally blank. The application still refuses to start
+until operators replace both secret values with non-blank production values.
+
+### Function package contents
+
+Build before packaging, then publish a package that includes:
+
+- `dist/`
+- `host.json`
+- `package.json`
+- `package-lock.json`
+
+`package.json` points Azure Functions at `dist/functions/*.js`, while
+`npm run dev` and `npm start` remain local polling entrypoints.
 
 ## Repository structure
 

@@ -1,6 +1,6 @@
 # Azure infrastructure
 
-**Last reviewed:** 2026-09-20
+**Last reviewed:** 2026-09-21
 
 ## Overview
 
@@ -8,9 +8,10 @@ Provision the minimum Azure infrastructure required to host the Telegram bot as
 a Node.js Azure Function. Infrastructure must be defined in Bicep and optimized
 for a low-traffic, low-cost production workload.
 
-This document covers infrastructure provisioning only, including the manual
-GitHub Actions workflow for the existing Bicep template. Building, publishing,
-starting, or otherwise operating the bot application is out of scope.
+This document covers the V1 production hosting contract for the existing Bicep
+template and its corresponding Azure Functions deployment shape. Building and
+publishing the application remain operator-run steps outside the infrastructure
+workflow.
 
 ## Goals
 
@@ -18,8 +19,10 @@ starting, or otherwise operating the bot application is out of scope.
 - Minimize recurring cost while retaining horizontal scaling.
 - Keep secrets out of source control, Bicep parameters, outputs, and deployment
   history.
-- Provide basic application logs, traces, exceptions, dependencies, requests,
-  and platform metrics.
+- Provide basic application logs, traces, exceptions, requests, and platform
+  metrics.
+- Prevent telemetry, logs, and configuration from disclosing bot tokens,
+  webhook secrets, request bodies, headers, or other sensitive URLs.
 
 ## Bicep deployment contract
 
@@ -87,8 +90,10 @@ workbook, alert, or action group.
 - Enable public network access; private endpoints are intentionally omitted to
   reduce cost.
 - Grant the managed identity the **Key Vault Secrets User** role at vault scope.
-- Provision the vault without secret values. Secret creation and rotation are
-  out of scope.
+- Expose an explicit bootstrap option that can create the required Telegram
+  secrets with empty-string values and can be omitted on ordinary redeployments
+  so operator-managed values are not overwritten.
+- Use versionless Key Vault references in Function App settings.
 - Configure Function App settings named `TELEGRAM_BOT_TOKEN` and
   `TELEGRAM_WEBHOOK_SECRET` as Key Vault references to the configured secret
   names.
@@ -105,6 +110,12 @@ workbook, alert, or action group.
 - Configure `APPLICATIONINSIGHTS_CONNECTION_STRING` and
   `APPLICATIONINSIGHTS_AUTHENTICATION_STRING` for managed-identity
   authentication.
+- Set `telemetryMode` to `OpenTelemetry` in `host.json`.
+- Start the Node.js worker with the Azure Monitor OpenTelemetry ESM loader.
+- Export application console logs at `info`.
+- Disable Node.js outbound HTTP dependency auto-instrumentation so telemetry
+  does not emit Telegram Bot API dependency URLs that embed the bot token in
+  the path.
 - Use Azure Monitor Metrics for built-in Function App platform metrics. Do not
   create diagnostic settings that duplicate Application Insights telemetry in
   the Log Analytics workspace.
@@ -128,6 +139,8 @@ workbook, alert, or action group.
 - Keep the public endpoint enabled because Telegram must reach the function.
 - Do not enable App Service Authentication. The application is responsible for
   validating Telegram's webhook secret header.
+- Host one stateless bot instance per worker process. Do not run long polling in
+  production.
 - Do not include secret values in application settings.
 
 ### Role assignments
@@ -194,6 +207,30 @@ This automation does not create the resource group or deployment identity,
 assign bootstrap permissions, provision secrets, build or publish application
 code, or operate the Telegram webhook.
 
+## Application deployment and operations
+
+- Build the TypeScript sources before packaging the app for Azure Functions.
+- The deployment package must include at least:
+  - `dist/`
+  - `host.json`
+  - `package.json`
+  - `package-lock.json`
+- `package.json` must point Azure Functions at the compiled function entrypoints
+  under `dist/functions/*.js`.
+- The production Function App route is `POST /api/telegram/webhook`.
+- Operators register or rotate the Telegram webhook separately after publishing
+  code and populating the Key Vault secrets. Runtime code must not call
+  `setWebhook` during cold start.
+- Empty-string bootstrap secrets are placeholders only. The application still
+  fails startup until operators replace them with non-blank secret values.
+- The webhook URL is fixed and non-secret; the request secret is enforced only
+  through the `X-Telegram-Bot-Api-Secret-Token` header.
+- Telegram retries failed or ambiguous deliveries, so duplicate updates are an
+  expected operational condition for V1.
+- The Telegram Bot API is a deliberate protocol exception because Telegram
+  requires the bot token in the outbound API path. Production telemetry must not
+  export those dependency URLs.
+
 ## Acceptance criteria
 
 - `az bicep build` completes without errors.
@@ -204,11 +241,16 @@ code, or operate the Telegram webhook.
   of 10 instances, and zero always-ready instances.
 - The Function App can access deployment storage, Key Vault secrets, and
   Application Insights through its managed identity.
+- The Function App settings use versionless Key Vault references for
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_WEBHOOK_SECRET`.
 - The storage account and Key Vault reject unauthenticated data-plane access.
 - No deployed configuration or output contains the Telegram bot token or
   webhook secret.
 - Application Insights is linked to the Log Analytics workspace with 30-day
   retention.
+- An explicit bootstrap deployment path exists for creating empty-string Key
+  Vault secret placeholders without forcing later redeployments to overwrite
+  operator-populated secret values.
 
 ## Limitations
 
@@ -217,13 +259,15 @@ code, or operate the Telegram webhook.
 - Public service endpoints are used to avoid private-networking charges.
 - The instance limit constrains peak throughput to control cost.
 - Application Insights sampling may omit individual telemetry events.
+- Live webhook registration and Azure deployment validation require operator
+  credentials and are not demonstrated in-repo.
 
 ## Out of scope
 
-- Building, packaging, publishing, starting, stopping, or testing the bot.
-- Implementing the Azure Functions HTTP trigger or Telegram webhook handler.
-- Registering, updating, or deleting the Telegram webhook.
-- Creating or rotating Key Vault secret values.
+- Pipeline redesign, queues, durable state, databases, or duplicate-suppression
+  infrastructure.
+- Virtual networks, private endpoints, NAT Gateway, and other private-network
+  hosting changes.
 - Creating the Azure resource group or assigning deployment permissions.
 - Automatic deployment triggers and application deployment automation.
 - Application-level telemetry sampling configuration.
