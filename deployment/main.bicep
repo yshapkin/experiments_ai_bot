@@ -245,7 +245,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         }
         {
           name: 'NODE_OPTIONS'
-          value: '--import @azure/monitor-opentelemetry/loader'
+          value: ''
         }
         {
           name: 'TELEGRAM_BOT_TOKEN'
