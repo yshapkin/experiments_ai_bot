@@ -280,6 +280,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   }
   dependsOn: [
     storageBlobDataOwnerAssignment
+    keyVaultSecretsUserAssignment
     telegramBotTokenSecret
     telegramWebhookSecret
   ]
