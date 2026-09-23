@@ -110,9 +110,9 @@ The resource-group-scoped Bicep definition in
 [`deployment/main.bicep`](deployment/main.bicep) provisions the low-cost Azure
 Functions Flex Consumption hosting resources defined in the
 [Azure hosting requirements](docs/operational-requirements/001-azure-hosting.md).
-It provisions infrastructure only; publishing the application, creating Key
-Vault secret values, and registering the Telegram webhook remain separate
-operational steps.
+CI now produces the deployable application bundle from trusted `master` pushes.
+Manual deployment still remains a separate operator action, as do creating Key
+Vault secret values and registering the Telegram webhook.
 
 Supply an environment name with the included non-secret parameter file, then
 validate or deploy it from a machine authenticated to the target subscription:
@@ -129,11 +129,28 @@ az deployment group what-if \
   --parameters deployment/main.bicepparam
 ```
 
-### Manual infrastructure deployment
+### CI bundles and manual deployment
 
-The **Deploy Azure infrastructure** GitHub Actions workflow deploys only the
-existing Bicep template. It does not build or publish the Node.js application,
-create secret values, register a Telegram webhook, or create a resource group.
+The **CI** workflow keeps all existing pull-request checks: Bicep formatting,
+lint, and build plus `npm ci`, `npm run typecheck`, `npm test`, and
+`npm run build`. Only successful `master` push runs publish a retained
+deployment bundle for 30 days. Pull requests never publish deployment
+artifacts.
+
+Each published bundle is versioned as
+`ci-<run-id>.<run-attempt>-<short-sha>` and contains:
+
+- `function-app.zip` with compiled app output and production dependencies
+- `infrastructure/main.json` compiled from `deployment/main.bicep`
+- `infrastructure/main.parameters.json` compiled from
+  `deployment/main.bicepparam`
+- `metadata.json` with the full commit SHA plus CI run ID and attempt
+
+The **Deploy Azure Function** GitHub Actions workflow consumes one of
+those retained CI bundles. It does not check out the repository, install
+dependencies, compile Bicep, build or package the Node.js app, lint, test, run
+Azure validation or what-if, create secret values, register a Telegram
+webhook, or create a resource group.
 
 Before using the workflow, an authorized Azure administrator must:
 
@@ -155,13 +172,17 @@ These identifiers are non-secret configuration; no Azure client secret or
 credential JSON is used. Configure required reviewers and other protection
 rules on the production environment.
 
-To deploy, open **Actions**, select **Deploy Azure infrastructure**, choose
-**Run workflow**, enter the existing resource-group name, and select the GitHub
-environment. The workflow uses OIDC to authenticate, then runs Bicep lint,
-build, Azure validation, and what-if before a separate deployment job. Because
-the Azure IDs are environment-scoped, approve the validation job first; then
-inspect its what-if output before approving the protected deployment job. Runs
-for the same environment and resource group are serialized.
+To deploy, open **Actions**, select **Deploy Azure Function**, choose
+**Run workflow**, enter the CI run ID and run attempt from a successful
+`master` push of the **CI** workflow, and select the GitHub environment. The
+workflow verifies that exact attempt succeeded, resolves the exact retained
+artifact name, checks its metadata, then deploys the compiled ARM template and
+the prebuilt app ZIP. Runs for the same environment and resource group are
+serialized.
+
+To roll back, dispatch the workflow again with an older successful CI run ID
+and attempt whose 30-day bundle retention has not expired. The deployment
+summary records the selected version provenance.
 
 The parameter value `environmentName = 'prod'` remains fixed in
 `deployment/main.bicepparam`; the GitHub environment input does not override
@@ -194,12 +215,13 @@ until operators replace both secret values with non-blank production values.
 
 ### Function package contents
 
-Build before packaging, then publish a package that includes:
+CI builds and packages the application ZIP with:
 
 - `dist/`
 - `host.json`
 - `package.json`
 - `package-lock.json`
+- `node_modules/` pruned to production dependencies only
 
 `package.json` points Azure Functions at `dist/functions/*.js`, while
 `npm run dev` and `npm start` remain local polling entrypoints.
@@ -209,7 +231,6 @@ Build before packaging, then publish a package that includes:
 ```text
 .github/      GitHub repository configuration
 docs/         Documentation
-plans/        Append-only agent workflow plans and execution ledgers
 src/          Functional code base
 test/         Unit tests
 deployment/   Infrastructure as Code (IaC) using Bicep

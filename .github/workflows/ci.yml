@@ -74,3 +74,134 @@ jobs:
 
       - name: Build production output
         run: npm run build
+
+  publish:
+    name: Publish deployable bundle
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    needs:
+      - validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Verify current attempt includes validation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          jobs_json="$(mktemp)"
+          trap 'rm -f "$jobs_json"' EXIT
+
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/attempts/${GITHUB_RUN_ATTEMPT}/jobs?per_page=100" \
+            > "$jobs_json"
+
+          validate_conclusion="$(jq -r '.jobs[] | select(.name == "Validate Node.js project") | .conclusion' "$jobs_json")"
+          if [[ "$validate_conclusion" != 'success' ]]; then
+            echo "::error::This CI attempt does not include a successful 'Validate Node.js project' job. Rerun the entire workflow instead of rerunning only publish jobs."
+            exit 1
+          fi
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Derive deployable version
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          short_sha="${GITHUB_SHA::7}"
+          version="ci-${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}-${short_sha}"
+          artifact_name="deploy-bundle-${version}"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production output
+        run: npm run build
+
+      - name: Remove development dependencies
+        run: npm prune --omit=dev
+
+      - name: Create application package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deploy-bundle/infrastructure
+          zip -r deploy-bundle/function-app.zip dist host.json package.json package-lock.json node_modules
+
+      - name: Compile infrastructure templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep build \
+            --file deployment/main.bicep \
+            --outfile deploy-bundle/infrastructure/main.json
+          az bicep build-params \
+            --file deployment/main.bicepparam \
+            --outfile deploy-bundle/infrastructure/main.parameters.json
+
+      - name: Write bundle metadata
+        env:
+          ARTIFACT_NAME: ${{ steps.version.outputs.artifact_name }}
+          CI_VERSION: ${{ steps.version.outputs.version }}
+          SHORT_SHA: ${{ steps.version.outputs.short_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module -e "
+            import { writeFileSync } from 'node:fs';
+            const metadata = {
+              version: process.env.CI_VERSION,
+              artifactName: process.env.ARTIFACT_NAME,
+              workflow: process.env.GITHUB_WORKFLOW,
+              workflowRef: process.env.GITHUB_WORKFLOW_REF,
+              repository: process.env.GITHUB_REPOSITORY,
+              ref: process.env.GITHUB_REF,
+              eventName: process.env.GITHUB_EVENT_NAME,
+              commitSha: process.env.GITHUB_SHA,
+              shortCommitSha: process.env.SHORT_SHA,
+              ciRunId: process.env.GITHUB_RUN_ID,
+              ciRunAttempt: process.env.GITHUB_RUN_ATTEMPT
+            };
+            writeFileSync('deploy-bundle/metadata.json', JSON.stringify(metadata, null, 2) + '\n');
+          "
+
+      - name: Upload deployable bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ steps.version.outputs.artifact_name }}
+          path: deploy-bundle/
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Summarize published bundle
+        env:
+          ARTIFACT_NAME: ${{ steps.version.outputs.artifact_name }}
+          CI_VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "## Deployable bundle published"
+            echo
+            echo "- Version: \`${CI_VERSION}\`"
+            echo "- Artifact: \`${ARTIFACT_NAME}\`"
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- Run: \`${GITHUB_RUN_ID}\` attempt \`${GITHUB_RUN_ATTEMPT}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
