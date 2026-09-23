@@ -33,6 +33,31 @@ The bot uses long polling for local development only. Keep `.env` local; it is
 ignored by Git. A missing or blank `TELEGRAM_BOT_TOKEN` stops startup before
 polling.
 
+## MCP servers for development
+
+The workspace configuration in [`.vscode/mcp.json`](.vscode/mcp.json) adds two
+servers for VS Code with GitHub Copilot:
+
+- **Azure** runs the pinned `@azure/mcp` npm package through `npx` over stdio.
+  It defaults to read-only operations. Use Node.js 22 and npm, install the
+  [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli), and
+  authenticate locally with `az login` using an account with least-privilege
+  access to the intended subscription. The first launch downloads the package.
+- **Microsoft Learn** connects to `https://learn.microsoft.com/api/mcp` over
+  HTTP for Microsoft documentation search and retrieval. It requires internet
+  access but no API key or Azure login.
+
+Open this repository in a current VS Code version with MCP support, run
+**MCP: List Servers** from the Command Palette, and start each server. Review
+the configuration before trusting it, then select its tools in Copilot Chat
+agent mode. Keep credentials out of the configuration; Azure uses your local
+authentication session. Read-only Azure access can still expose sensitive
+resource data, so review tool calls and their output before sharing it.
+
+These servers are development tools, not bot runtime dependencies. This
+workspace file does not configure GitHub Copilot CLI or the GitHub Copilot
+cloud agent; those clients require their own MCP settings.
+
 ## Supported behavior
 
 - `/start` sends one welcome message with a **Help** button.

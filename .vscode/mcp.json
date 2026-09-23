@@ -1,0 +1,19 @@
+{
+  "servers": {
+    "azure": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "--yes",
+        "@azure/mcp@3.0.0-beta.46",
+        "server",
+        "start",
+        "--read-only"
+      ]
+    },
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp"
+    }
+  }
+}
