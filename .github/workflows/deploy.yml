@@ -1,0 +1,154 @@
+name: Deploy Azure Function
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub deployment environment
+        required: true
+        default: production
+        type: environment
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  RESOURCE_GROUP: TG_AI_BOT_NEU
+
+concurrency:
+  group: deployment-${{ inputs.environment }}-TG_AI_BOT_NEU
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build application artifact
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build production output
+        run: npm run build
+
+      - name: Remove development dependencies
+        run: npm prune --omit=dev
+
+      - name: Create deployment package
+        shell: bash
+        run: zip -r function-app.zip dist host.json package.json package-lock.json node_modules
+
+      - name: Upload application artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: function-app
+          path: function-app.zip
+          if-no-files-found: error
+          retention-days: 1
+
+  validate:
+    name: Validate and preview infrastructure
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2.3.1
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Lint Bicep
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep lint --file deployment/main.bicep
+
+      - name: Build Bicep
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep build --file deployment/main.bicep
+
+      - name: Validate Azure deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment group validate \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file deployment/main.bicep \
+            --parameters deployment/main.bicepparam
+
+      - name: Preview Azure deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          az deployment group what-if \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file deployment/main.bicep \
+            --parameters deployment/main.bicepparam
+
+  deploy:
+    name: Deploy infrastructure and application
+    needs:
+      - build
+      - validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: ${{ inputs.environment }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Download application artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: function-app
+
+      - name: Sign in to Azure with OIDC
+        uses: azure/login@v2.3.1
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Azure infrastructure
+        shell: bash
+        run: |
+          set -euo pipefail
+          function_app_name="$(az deployment group create \
+            --name "infrastructure-${{ github.run_id }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --template-file deployment/main.bicep \
+            --parameters deployment/main.bicepparam \
+            --query properties.outputs.functionAppName.value \
+            --output tsv)"
+          if [[ -z "$function_app_name" ]]; then
+            echo "::error::Infrastructure deployment did not return a Function App name."
+            exit 1
+          fi
+          echo "FUNCTION_APP_NAME=$function_app_name" >> "$GITHUB_ENV"
+
+      - name: Deploy application artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          az functionapp deployment source config-zip \
+            --resource-group "$RESOURCE_GROUP" \
+            --name "$FUNCTION_APP_NAME" \
+            --src function-app.zip
