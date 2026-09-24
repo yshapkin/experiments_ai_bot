@@ -258,6 +258,7 @@ jobs:
       - name: Summarize deployed version
         env:
           VERSION: ${{ needs.resolve.outputs.version }}
+          ENVIRONMENT: ${{ inputs.environment }}
         shell: bash
         run: |
           set -euo pipefail
@@ -265,7 +266,7 @@ jobs:
             echo
             echo "## Deployment completed"
             echo
-            echo "- Environment: \`${{ inputs.environment }}\`"
+            echo "- Environment: \`${ENVIRONMENT}\`"
             echo "- Resource group: \`${RESOURCE_GROUP}\`"
             echo "- Function App: \`${FUNCTION_APP_NAME}\`"
             echo "- Deployed CI version: \`${VERSION}\`"
