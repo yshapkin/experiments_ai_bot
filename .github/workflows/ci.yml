@@ -79,17 +79,51 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         run: npm prune --omit=dev
 
-      - name: Create deployment package
+      - name: Create versioned deployment bundle
+        id: bundle
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         shell: bash
-        run: zip -r function-app.zip dist host.json package.json package-lock.json node_modules
+        run: |
+          set -euo pipefail
 
-      - name: Upload application artifact
+          short_sha="${GITHUB_SHA::7}"
+          bundle_name="ci-${GITHUB_RUN_ID}.${GITHUB_RUN_ATTEMPT}-${short_sha}"
+          bundle_directory="${RUNNER_TEMP}/${bundle_name}"
+
+          mkdir -p "${bundle_directory}/infrastructure"
+          zip -r "${bundle_directory}/function-app.zip" \
+            dist host.json package.json package-lock.json node_modules
+          az bicep build \
+            --file deployment/main.bicep \
+            --outfile "${bundle_directory}/infrastructure/main.json"
+          az bicep build-params \
+            --file deployment/main.bicepparam \
+            --outfile "${bundle_directory}/infrastructure/main.parameters.json"
+          jq -n \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg commitSha "$GITHUB_SHA" \
+            --arg runId "$GITHUB_RUN_ID" \
+            --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
+            '{
+              bundleVersion: 1,
+              repository: $repository,
+              workflow: "ci.yml",
+              event: "push",
+              ref: "refs/heads/master",
+              commitSha: $commitSha,
+              runId: $runId,
+              runAttempt: $runAttempt
+            }' > "${bundle_directory}/metadata.json"
+
+          echo "name=$bundle_name" >> "$GITHUB_OUTPUT"
+          echo "directory=$bundle_directory" >> "$GITHUB_OUTPUT"
+
+      - name: Upload deployment bundle
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: function-app-${{ github.run_attempt }}
-          path: function-app.zip
+          name: ${{ steps.bundle.outputs.name }}
+          path: ${{ steps.bundle.outputs.directory }}
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
           compression-level: 0

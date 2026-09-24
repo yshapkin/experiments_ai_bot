@@ -135,11 +135,13 @@ az deployment group what-if \
 ### Manual production deployment
 
 The **CI** workflow validates every pull request. On a successful push to
-`master`, it also creates an attempt-specific application artifact containing
-the compiled output and production dependencies. The **Deploy Azure Function**
-workflow deploys that immutable CI artifact together with the Bicep template
-from the same commit. It does not rebuild the application, create secret
-values, register a Telegram webhook, or create a resource group.
+`master`, it also creates a versioned deployment bundle retained for 30 days.
+The bundle contains the application ZIP, compiled ARM template and parameter
+JSON, and metadata identifying the commit, CI run, and attempt. The **Deploy
+Azure Function** workflow deploys only that immutable CI bundle. It does not
+check out source or build, lint, test, validate, or run what-if during deploy,
+and it does not create secret values, register a Telegram webhook, or create a
+resource group.
 
 Before using the workflow, an authorized Azure administrator must:
 
@@ -164,12 +166,13 @@ rules on the production environment.
 To deploy, select **Deploy Azure Function**, choose **Run workflow**, and
 select the GitHub environment. The workflow automatically looks up the most
 recent successful `ci.yml` run for a `master` push through the GitHub API, then
-uses that run's commit and application artifact for the rest of the workflow
-— no run ID or attempt number is entered manually. It then uses OIDC to
-authenticate, runs Bicep lint, build, Azure validation, and what-if, and
-downloads the artifact from the resolved CI run before deployment. Because the
-Azure IDs are environment-scoped, approve the validation job first; then
-inspect its what-if output before approving the protected deployment job. Runs
+pins that run's ID, attempt, and commit and downloads its exact
+`ci-<run-id>.<run-attempt>-<short-sha>` bundle—no run ID or attempt number is
+entered manually. The workflow verifies the retained bundle's metadata and
+required files before using OIDC to deploy its precompiled ARM JSON and
+application ZIP. If the latest successful run's bundle is missing, expired, or
+incompatible, deployment fails without falling back to an older run. The
+selected environment's protection rules provide the approval gate, and runs
 for the same environment are serialized.
 
 The parameter value `environmentName = 'prod'` remains fixed in

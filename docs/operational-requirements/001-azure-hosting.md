@@ -206,15 +206,17 @@ contains:
 - `metadata.json` recording the version, full commit SHA, CI run ID, and CI run
   attempt
 
-An operator manually dispatches **Deploy Azure Function**, supplies a CI
-run ID and run attempt from a successful `master` push of the **CI** workflow,
-and selects the GitHub environment. The workflow serializes deployments to the
-same environment and resource group, verifies that exact attempt completed the
-validation and publish jobs successfully, confirms the retained artifact and its
-metadata, then deploys the compiled ARM template and prebuilt application ZIP.
-It does not check out the repository, build application code, compile Bicep,
-package dependencies, lint, test, type-check, or run Azure validation or
-what-if. The bundled parameter file still fixes `environmentName` to `prod`.
+An operator manually dispatches **Deploy Azure Function** and selects only the
+GitHub environment. The workflow resolves the latest successful `ci.yml` run
+from a `master` push through the GitHub API, pins its run ID, attempt, and commit
+SHA, and requires that run's exact retained bundle. It verifies the bundle
+metadata and required files before deploying the compiled ARM template and
+prebuilt application ZIP. A missing, expired, or incompatible bundle fails
+clearly without falling back to an older successful run. The workflow
+serializes deployments to the same environment and resource group. It does not
+check out the repository, build application code, compile Bicep, package
+dependencies, lint, test, type-check, or run Azure validation or what-if. The
+bundled parameter file still fixes `environmentName` to `prod`.
 
 This automation does not create the resource group or deployment identity,
 assign bootstrap permissions, provision secrets, rebuild or repackage
@@ -255,8 +257,9 @@ application code, or operate the Telegram webhook.
 - Only successful `master` push CI runs publish deployable bundles.
 - Each published bundle records the full commit SHA, CI run ID, and CI run
   attempt and expires after 30 days.
-- The manual deployment workflow consumes an explicitly selected CI run ID and
-  run attempt, verifies their provenance, and does not rebuild artifacts.
+- The manual deployment workflow automatically pins the latest successful
+  `master` push CI run, verifies its bundle provenance, and does not rebuild
+  artifacts or silently fall back to an older run.
 - Repeating the deployment with unchanged parameters produces no modifications.
 - The Function App uses the `FC1` plan, Node.js 22, 2,048 MB instances, a maximum
   of 10 instances, and zero always-ready instances.
