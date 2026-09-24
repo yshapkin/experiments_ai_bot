@@ -132,11 +132,14 @@ az deployment group what-if \
   --parameters deployment/main.bicepparam
 ```
 
-### Manual infrastructure deployment
+### Manual production deployment
 
-The **Deploy Azure infrastructure** GitHub Actions workflow deploys only the
-existing Bicep template. It does not build or publish the Node.js application,
-create secret values, register a Telegram webhook, or create a resource group.
+The **CI** workflow validates every pull request. On a successful push to
+`master`, it also creates an attempt-specific application artifact containing
+the compiled output and production dependencies. The **Deploy Azure Function**
+workflow deploys that immutable CI artifact together with the Bicep template
+from the same commit. It does not rebuild the application, create secret
+values, register a Telegram webhook, or create a resource group.
 
 Before using the workflow, an authorized Azure administrator must:
 
@@ -158,13 +161,16 @@ These identifiers are non-secret configuration; no Azure client secret or
 credential JSON is used. Configure required reviewers and other protection
 rules on the production environment.
 
-To deploy, open **Actions**, select **Deploy Azure infrastructure**, choose
-**Run workflow**, enter the existing resource-group name, and select the GitHub
-environment. The workflow uses OIDC to authenticate, then runs Bicep lint,
-build, Azure validation, and what-if before a separate deployment job. Because
-the Azure IDs are environment-scoped, approve the validation job first; then
+To deploy, open the latest successful **CI** run for a `master` push and note
+its run ID and attempt number. Then select **Deploy Azure Function**, choose
+**Run workflow**, enter those two values, and select the GitHub environment.
+The deployment first verifies through the GitHub API that the selected attempt
+belongs to the successful `ci.yml` workflow run on `master`. It then uses OIDC
+to authenticate, runs Bicep lint, build, Azure validation, and what-if, and
+downloads the artifact from that exact CI run before deployment. Because the
+Azure IDs are environment-scoped, approve the validation job first; then
 inspect its what-if output before approving the protected deployment job. Runs
-for the same environment and resource group are serialized.
+for the same environment are serialized.
 
 The parameter value `environmentName = 'prod'` remains fixed in
 `deployment/main.bicepparam`; the GitHub environment input does not override

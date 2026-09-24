@@ -1,8 +1,18 @@
 name: Deploy Azure Function
 
+run-name: Deploy CI run ${{ inputs.ci_run_id }} attempt ${{ inputs.ci_run_attempt }} to ${{ inputs.environment }}
+
 on:
   workflow_dispatch:
     inputs:
+      ci_run_id:
+        description: Successful CI workflow run ID from a master push
+        required: true
+        type: string
+      ci_run_attempt:
+        description: Successful CI workflow run attempt number for the selected run
+        required: true
+        type: string
       environment:
         description: GitHub deployment environment
         required: true
@@ -11,7 +21,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write
+  actions: read
 
 env:
   RESOURCE_GROUP: TG_AI_BOT_NEU
@@ -21,49 +31,72 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build application artifact
+  resolve-ci-run:
+    name: Validate CI workflow run
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 5
+    outputs:
+      head_sha: ${{ steps.resolve.outputs.head_sha }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build production output
-        run: npm run build
-
-      - name: Remove development dependencies
-        run: npm prune --omit=dev
-
-      - name: Create deployment package
+      - name: Validate selected CI run
+        id: resolve
         shell: bash
-        run: zip -r function-app.zip dist host.json package.json package-lock.json node_modules
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ inputs.ci_run_id }}
+          CI_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+        run: |
+          set -euo pipefail
 
-      - name: Upload application artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: function-app
-          path: function-app.zip
-          if-no-files-found: error
-          retention-days: 1
+          if [[ ! "$CI_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::CI run ID must be a positive integer."
+            exit 1
+          fi
+          if [[ ! "$CI_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::CI run attempt must be a positive integer."
+            exit 1
+          fi
+
+          run_json="$(gh api \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${CI_RUN_ID}/attempts/${CI_RUN_ATTEMPT}")"
+
+          if ! jq -e \
+            --arg attempt "$CI_RUN_ATTEMPT" \
+            '.name == "CI"
+              and .path == ".github/workflows/ci.yml"
+              and .event == "push"
+              and .head_branch == "master"
+              and .status == "completed"
+              and .conclusion == "success"
+              and (.run_attempt == ($attempt | tonumber))' \
+            <<< "$run_json" > /dev/null; then
+            echo "::error::The selected run must be a successful CI workflow attempt from a master push."
+            jq '{name, path, event, head_branch, status, conclusion, run_attempt, html_url}' <<< "$run_json"
+            exit 1
+          fi
+
+          head_sha="$(jq -r '.head_sha' <<< "$run_json")"
+          if [[ ! "$head_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::The selected CI run did not return a valid commit SHA."
+            exit 1
+          fi
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
 
   validate:
     name: Validate and preview infrastructure
+    needs: resolve-ci-run
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     environment:
       name: ${{ inputs.environment }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve-ci-run.outputs.head_sha }}
 
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2.3.1
@@ -105,20 +138,29 @@ jobs:
   deploy:
     name: Deploy infrastructure and application
     needs:
-      - build
+      - resolve-ci-run
       - validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
     environment:
       name: ${{ inputs.environment }}
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve-ci-run.outputs.head_sha }}
 
       - name: Download application artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: function-app
+          name: function-app-${{ inputs.ci_run_attempt }}
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
 
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2.3.1

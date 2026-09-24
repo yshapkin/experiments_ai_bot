@@ -74,3 +74,22 @@ jobs:
 
       - name: Build production output
         run: npm run build
+
+      - name: Remove development dependencies
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        run: npm prune --omit=dev
+
+      - name: Create deployment package
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: bash
+        run: zip -r function-app.zip dist host.json package.json package-lock.json node_modules
+
+      - name: Upload application artifact
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: function-app-${{ github.run_attempt }}
+          path: function-app.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
