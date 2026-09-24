@@ -4,7 +4,11 @@ import { after, beforeEach, describe, it, mock } from "node:test";
 
 import { app } from "@azure/functions";
 
-import type { Logger } from "../src/logger.js";
+import type {
+  Logger,
+  WebhookRejectionDiagnostics,
+  WebhookRejectionReason,
+} from "../src/logger.js";
 import { privateTextUpdate } from "./helpers/telegram.js";
 
 const originalBotToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -182,6 +186,11 @@ describe("handleTelegramWebhook", () => {
     const handleTelegramWebhook = await loadWebhookHandler();
     let jsonCalls = 0;
     let cloneCalls = 0;
+    const rejections: Array<{
+      diagnostics: WebhookRejectionDiagnostics | undefined;
+      reason: WebhookRejectionReason;
+      status: number;
+    }> = [];
 
     const response = await handleTelegramWebhook(
       {
@@ -197,23 +206,50 @@ describe("handleTelegramWebhook", () => {
           };
         },
       } as never,
-      noopLogger,
+      {
+        ...noopLogger,
+        webhookRejected: (
+          reason: WebhookRejectionReason,
+          status: number,
+          diagnostics?: WebhookRejectionDiagnostics,
+        ) => {
+          rejections.push({ diagnostics, reason, status });
+        },
+      },
     );
 
     assert.deepEqual(response, { status: 401 });
     assert.equal(jsonCalls, 0);
     assert.equal(cloneCalls, 0);
+    assert.deepEqual(rejections, [
+      {
+        diagnostics: {
+          expectedSecretByteLength: Buffer.byteLength(webhookSecret),
+          expectedSecretIsKeyVaultReference: false,
+          receivedSecretByteLength: null,
+          secretHeaderPresent: false,
+        },
+        reason: "secret_token_invalid",
+        status: 401,
+      },
+    ]);
   });
 
   it("rejects a wrong secret token before reading the request body", async () => {
     const handleTelegramWebhook = await loadWebhookHandler();
     let jsonCalls = 0;
     let cloneCalls = 0;
+    const rejections: Array<{
+      diagnostics: WebhookRejectionDiagnostics | undefined;
+      reason: WebhookRejectionReason;
+      status: number;
+    }> = [];
+    const receivedSecret = "wrong-secret-token";
 
     const response = await handleTelegramWebhook(
       {
         headers: new Headers({
-          "x-telegram-bot-api-secret-token": "wrong-secret-token",
+          "x-telegram-bot-api-secret-token": receivedSecret,
           "content-type": "application/json",
         }),
         json: async () => {
@@ -227,12 +263,33 @@ describe("handleTelegramWebhook", () => {
           };
         },
       } as never,
-      noopLogger,
+      {
+        ...noopLogger,
+        webhookRejected: (
+          reason: WebhookRejectionReason,
+          status: number,
+          diagnostics?: WebhookRejectionDiagnostics,
+        ) => {
+          rejections.push({ diagnostics, reason, status });
+        },
+      },
     );
 
     assert.deepEqual(response, { status: 401 });
     assert.equal(jsonCalls, 0);
     assert.equal(cloneCalls, 0);
+    assert.deepEqual(rejections, [
+      {
+        diagnostics: {
+          expectedSecretByteLength: Buffer.byteLength(webhookSecret),
+          expectedSecretIsKeyVaultReference: false,
+          receivedSecretByteLength: Buffer.byteLength(receivedSecret),
+          secretHeaderPresent: true,
+        },
+        reason: "secret_token_invalid",
+        status: 401,
+      },
+    ]);
   });
 
   it("rejects an unsupported content type", async () => {

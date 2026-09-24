@@ -6,8 +6,19 @@ export interface LogSink {
 export interface Logger {
   info(event: "bot_started" | "webhook_runtime_ready"): void;
   processingFailure(updateId: number | undefined, error: unknown): void;
-  webhookRejected(reason: WebhookRejectionReason, status: number): void;
+  webhookRejected(
+    reason: WebhookRejectionReason,
+    status: number,
+    diagnostics?: WebhookRejectionDiagnostics,
+  ): void;
   webhookFailure(error: unknown): void;
+}
+
+export interface WebhookRejectionDiagnostics {
+  expectedSecretByteLength: number;
+  expectedSecretIsKeyVaultReference: boolean;
+  receivedSecretByteLength: number | null;
+  secretHeaderPresent: boolean;
 }
 
 export type WebhookRejectionReason =
@@ -32,13 +43,14 @@ export function createLogger(sink: LogSink = console): Logger {
         }),
       );
     },
-    webhookRejected(reason, status): void {
+    webhookRejected(reason, status, diagnostics): void {
       sink.log(
         JSON.stringify({
           level: "info",
           event: "webhook_request_rejected",
           reason,
           status,
+          ...(diagnostics === undefined ? {} : { diagnostics }),
         }),
       );
     },

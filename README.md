@@ -83,6 +83,9 @@ npm start
 - Azure Functions serves `POST /api/telegram/webhook`.
 - The webhook URL is fixed and non-secret. Authentication relies on the
   `X-Telegram-Bot-Api-Secret-Token` header value stored in Key Vault.
+- Secret-token rejection logs include only header presence, UTF-8 byte lengths,
+  and whether the configured value is an unresolved Key Vault reference. They
+  never include secret values or hashes.
 - Production workers are stateless and do not start grammY long polling.
 - The Functions host uses OpenTelemetry mode, while the Node worker exports only
   console logs to workspace-backed Application Insights over managed identity.

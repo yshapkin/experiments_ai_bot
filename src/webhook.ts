@@ -8,6 +8,7 @@ import { loadWebhookConfig } from "./config.js";
 import {
   createLogger,
   type Logger,
+  type WebhookRejectionDiagnostics,
   type WebhookRejectionReason,
 } from "./logger.js";
 
@@ -35,7 +36,11 @@ export async function handleTelegramWebhook(
     );
 
     if (rejection !== undefined) {
-      runtimeLogger.webhookRejected(rejection.reason, rejection.status);
+      runtimeLogger.webhookRejected(
+        rejection.reason,
+        rejection.status,
+        rejection.diagnostics,
+      );
       return { status: rejection.status };
     }
 
@@ -52,6 +57,7 @@ export async function handleTelegramWebhook(
 }
 
 interface WebhookRejection {
+  diagnostics?: WebhookRejectionDiagnostics;
   reason: WebhookRejectionReason;
   status: number;
 }
@@ -61,8 +67,13 @@ async function validateTelegramWebhookRequest(
   expectedSecret: string,
   maxBodyBytes = DEFAULT_MAX_REQUEST_BODY_BYTES,
 ): Promise<WebhookRejection | undefined> {
-  if (!hasExpectedSecretToken(request, expectedSecret)) {
-    return { reason: "secret_token_invalid", status: 401 };
+  const secretTokenValidation = validateSecretToken(request, expectedSecret);
+  if (!secretTokenValidation.matches) {
+    return {
+      diagnostics: secretTokenValidation.diagnostics,
+      reason: "secret_token_invalid",
+      status: 401,
+    };
   }
 
   const contentType = request.headers.get("content-type");
@@ -100,21 +111,38 @@ async function validateTelegramWebhookRequest(
   return undefined;
 }
 
-function hasExpectedSecretToken(
+interface SecretTokenValidation {
+  diagnostics: WebhookRejectionDiagnostics;
+  matches: boolean;
+}
+
+function validateSecretToken(
   request: HttpRequest,
   expectedSecret: string,
-): boolean {
+): SecretTokenValidation {
   const receivedSecret = request.headers.get(TELEGRAM_SECRET_HEADER);
-  if (receivedSecret === null) {
-    return false;
-  }
-
   const expected = Buffer.from(expectedSecret);
-  const received = Buffer.from(receivedSecret);
+  const received =
+    receivedSecret === null ? undefined : Buffer.from(receivedSecret);
+  const diagnostics: WebhookRejectionDiagnostics = {
+    expectedSecretByteLength: expected.byteLength,
+    expectedSecretIsKeyVaultReference: expectedSecret.startsWith(
+      "@Microsoft.KeyVault(",
+    ),
+    receivedSecretByteLength: received?.byteLength ?? null,
+    secretHeaderPresent: receivedSecret !== null,
+  };
+
+  if (received === undefined) {
+    return { diagnostics, matches: false };
+  }
 
   if (expected.length !== received.length) {
-    return false;
+    return { diagnostics, matches: false };
   }
 
-  return timingSafeEqual(expected, received);
+  return {
+    diagnostics,
+    matches: timingSafeEqual(expected, received),
+  };
 }
