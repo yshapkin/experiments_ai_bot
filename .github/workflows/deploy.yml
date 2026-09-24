@@ -1,8 +1,18 @@
 name: Deploy Azure Function
 
+run-name: Deploy CI run ${{ inputs.ci_run_id }} attempt ${{ inputs.ci_run_attempt }} to ${{ inputs.environment }}
+
 on:
   workflow_dispatch:
     inputs:
+      ci_run_id:
+        description: Successful CI workflow run ID from a master push
+        required: true
+        type: string
+      ci_run_attempt:
+        description: Successful CI workflow run attempt number for the selected run
+        required: true
+        type: string
       environment:
         description: GitHub deployment environment
         required: true
@@ -11,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   actions: read
 
 env:
@@ -65,7 +76,11 @@ jobs:
   validate:
     name: Validate and preview infrastructure
     needs: resolve-ci-run
+    needs: resolve-ci-run
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     permissions:
       contents: read
       id-token: write
@@ -74,6 +89,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve-ci-run.outputs.head_sha }}
         with:
           ref: ${{ needs.resolve-ci-run.outputs.head_sha }}
 
@@ -118,9 +135,14 @@ jobs:
     name: Deploy infrastructure and application
     needs:
       - resolve-ci-run
+      - resolve-ci-run
       - validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
     permissions:
       actions: read
       contents: read
@@ -130,6 +152,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ needs.resolve-ci-run.outputs.head_sha }}
         with:
           ref: ${{ needs.resolve-ci-run.outputs.head_sha }}
 
