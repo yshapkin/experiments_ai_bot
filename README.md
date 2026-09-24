@@ -161,13 +161,13 @@ These identifiers are non-secret configuration; no Azure client secret or
 credential JSON is used. Configure required reviewers and other protection
 rules on the production environment.
 
-To deploy, open the latest successful **CI** run for a `master` push and note
-its run ID and attempt number. Then select **Deploy Azure Function**, choose
-**Run workflow**, enter those two values, and select the GitHub environment.
-The deployment first verifies through the GitHub API that the selected attempt
-belongs to the successful `ci.yml` workflow run on `master`. It then uses OIDC
-to authenticate, runs Bicep lint, build, Azure validation, and what-if, and
-downloads the artifact from that exact CI run before deployment. Because the
+To deploy, select **Deploy Azure Function**, choose **Run workflow**, and
+select the GitHub environment. The workflow automatically looks up the most
+recent successful `ci.yml` run for a `master` push through the GitHub API, then
+uses that run's commit and application artifact for the rest of the workflow
+— no run ID or attempt number is entered manually. It then uses OIDC to
+authenticate, runs Bicep lint, build, Azure validation, and what-if, and
+downloads the artifact from the resolved CI run before deployment. Because the
 Azure IDs are environment-scoped, approve the validation job first; then
 inspect its what-if output before approving the protected deployment job. Runs
 for the same environment are serialized.
