@@ -3,15 +3,19 @@ name: Deploy Azure Function
 on:
   workflow_dispatch:
     inputs:
+      ci_run_id:
+        description: Successful CI workflow run ID from a master push
+        required: true
+        type: string
+      ci_run_attempt:
+        description: Successful CI workflow run attempt number for the selected run
+        required: true
+        type: string
       environment:
         description: GitHub deployment environment
         required: true
         default: production
         type: environment
-
-permissions:
-  contents: read
-  id-token: write
 
 env:
   RESOURCE_GROUP: TG_AI_BOT_NEU
@@ -21,104 +25,195 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build application artifact
+  resolve:
+    name: Resolve deployable CI bundle
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      artifact_name: ${{ steps.bundle.outputs.artifact_name }}
+      version: ${{ steps.bundle.outputs.version }}
+      head_sha: ${{ steps.bundle.outputs.head_sha }}
+
     steps:
-      - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Set up Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build production output
-        run: npm run build
-
-      - name: Remove development dependencies
-        run: npm prune --omit=dev
-
-      - name: Create deployment package
-        shell: bash
-        run: zip -r function-app.zip dist host.json package.json package-lock.json node_modules
-
-      - name: Upload application artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: function-app
-          path: function-app.zip
-          if-no-files-found: error
-          retention-days: 1
-
-  validate:
-    name: Validate and preview infrastructure
-    runs-on: ubuntu-latest
-    environment:
-      name: ${{ inputs.environment }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-
-      - name: Sign in to Azure with OIDC
-        uses: azure/login@v2.3.1
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Lint Bicep
+      - name: Validate manual selection and resolve bundle
+        id: bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SELECTED_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+          SELECTED_RUN_ID: ${{ inputs.ci_run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          az bicep lint --file deployment/main.bicep
 
-      - name: Build Bicep
+          if [[ ! "$SELECTED_RUN_ID" =~ ^[0-9]+$ ]]; then
+            echo "::error::CI run ID must be numeric."
+            exit 1
+          fi
+
+          if [[ ! "$SELECTED_RUN_ATTEMPT" =~ ^[0-9]+$ ]]; then
+            echo "::error::CI run attempt must be numeric."
+            exit 1
+          fi
+
+          run_json="$(mktemp)"
+          jobs_json="$(mktemp)"
+          artifacts_json="$(mktemp)"
+          trap 'rm -f "$run_json" "$jobs_json" "$artifacts_json"' EXIT
+
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${SELECTED_RUN_ID}" \
+            > "$run_json"
+
+          workflow_path="$(jq -r '.path // empty' "$run_json")"
+          event_name="$(jq -r '.event // empty' "$run_json")"
+          head_branch="$(jq -r '.head_branch // empty' "$run_json")"
+          head_sha="$(jq -r '.head_sha // empty' "$run_json")"
+
+          if [[ "$workflow_path" != '.github/workflows/ci.yml' && "$workflow_path" != .github/workflows/ci.yml@* ]]; then
+            echo "::error::Selected run does not belong to this repository's CI workflow."
+            exit 1
+          fi
+
+          if [[ "$event_name" != 'push' || "$head_branch" != 'master' ]]; then
+            echo "::error::Selected run must come from a push to master."
+            exit 1
+          fi
+
+          if [[ -z "$head_sha" || "$head_sha" == 'null' ]]; then
+            echo "::error::Selected run is missing a commit SHA."
+            exit 1
+          fi
+
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${SELECTED_RUN_ID}/attempts/${SELECTED_RUN_ATTEMPT}/jobs?per_page=100" \
+            > "$jobs_json"
+
+          validate_conclusion="$(jq -r '.jobs[] | select(.name == "Validate Node.js project") | .conclusion' "$jobs_json")"
+          publish_conclusion="$(jq -r '.jobs[] | select(.name == "Publish deployable bundle") | .conclusion' "$jobs_json")"
+
+          if [[ "$validate_conclusion" != 'success' ]]; then
+            echo "::error::Selected attempt does not include a successful 'Validate Node.js project' job."
+            exit 1
+          fi
+
+          if [[ "$publish_conclusion" != 'success' ]]; then
+            echo "::error::Selected attempt does not include a successful 'Publish deployable bundle' job."
+            exit 1
+          fi
+
+          short_sha="${head_sha::7}"
+          version="ci-${SELECTED_RUN_ID}.${SELECTED_RUN_ATTEMPT}-${short_sha}"
+          artifact_name="deploy-bundle-${version}"
+
+          gh api \
+            --header 'Accept: application/vnd.github+json' \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${SELECTED_RUN_ID}/artifacts?per_page=100" \
+            > "$artifacts_json"
+
+          artifact_matches="$(jq --arg artifact_name "$artifact_name" '[.artifacts[] | select(.name == $artifact_name)] | length' "$artifacts_json")"
+          if [[ "$artifact_matches" != '1' ]]; then
+            echo "::error::Expected exactly one retained artifact named '${artifact_name}' for run ${SELECTED_RUN_ID}. It may be missing or expired."
+            exit 1
+          fi
+
+          artifact_expired="$(jq -r --arg artifact_name "$artifact_name" '.artifacts[] | select(.name == $artifact_name) | .expired' "$artifacts_json")"
+          if [[ "$artifact_expired" != 'false' ]]; then
+            echo "::error::Artifact '${artifact_name}' is expired and cannot be deployed."
+            exit 1
+          fi
+
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+
+      - name: Summarize selected bundle
+        env:
+          ARTIFACT_NAME: ${{ steps.bundle.outputs.artifact_name }}
+          HEAD_SHA: ${{ steps.bundle.outputs.head_sha }}
+          VERSION: ${{ steps.bundle.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
-          az bicep build --file deployment/main.bicep
-
-      - name: Validate Azure deployment
-        shell: bash
-        run: |
-          set -euo pipefail
-          az deployment group validate \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file deployment/main.bicep \
-            --parameters deployment/main.bicepparam
-
-      - name: Preview Azure deployment
-        shell: bash
-        run: |
-          set -euo pipefail
-          az deployment group what-if \
-            --resource-group "$RESOURCE_GROUP" \
-            --template-file deployment/main.bicep \
-            --parameters deployment/main.bicepparam
+          {
+            echo "## Selected deployment bundle"
+            echo
+            echo "- Version: \`${VERSION}\`"
+            echo "- Artifact: \`${ARTIFACT_NAME}\`"
+            echo "- Source CI run: \`${{ inputs.ci_run_id }}\` attempt \`${{ inputs.ci_run_attempt }}\`"
+            echo "- Source commit: \`${HEAD_SHA}\`"
+            echo "- Rollback: select any older successful retained CI run ID and attempt from a master push."
+            echo "- Build policy: this workflow deploys the retained bundle only; it does not check out code, compile Bicep, build Node.js, install dependencies, lint, test, or run Azure what-if."
+          } >> "$GITHUB_STEP_SUMMARY"
 
   deploy:
     name: Deploy infrastructure and application
     needs:
-      - build
-      - validate
+      - resolve
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment:
       name: ${{ inputs.environment }}
-    steps:
-      - name: Check out repository
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
 
-      - name: Download application artifact
+    steps:
+      - name: Download selected deployable bundle
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          name: function-app
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.ci_run_id }}
+          name: ${{ needs.resolve.outputs.artifact_name }}
+          path: deploy-bundle
+
+      - name: Verify bundle metadata
+        env:
+          EXPECTED_HEAD_SHA: ${{ needs.resolve.outputs.head_sha }}
+          EXPECTED_RUN_ATTEMPT: ${{ inputs.ci_run_attempt }}
+          EXPECTED_RUN_ID: ${{ inputs.ci_run_id }}
+          EXPECTED_VERSION: ${{ needs.resolve.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          metadata_path='deploy-bundle/metadata.json'
+          app_zip_path='deploy-bundle/function-app.zip'
+          template_path='deploy-bundle/infrastructure/main.json'
+          parameters_path='deploy-bundle/infrastructure/main.parameters.json'
+
+          for path in "$metadata_path" "$app_zip_path" "$template_path" "$parameters_path"; do
+            if [[ ! -f "$path" ]]; then
+              echo "::error::Bundle is missing required file '$path'."
+              exit 1
+            fi
+          done
+
+          actual_version="$(jq -r '.version // empty' "$metadata_path")"
+          actual_run_id="$(jq -r '.ciRunId // empty' "$metadata_path")"
+          actual_run_attempt="$(jq -r '.ciRunAttempt // empty' "$metadata_path")"
+          actual_head_sha="$(jq -r '.commitSha // empty' "$metadata_path")"
+
+          if [[ "$actual_version" != "$EXPECTED_VERSION" ]]; then
+            echo "::error::Bundle metadata version '$actual_version' does not match expected version '$EXPECTED_VERSION'."
+            exit 1
+          fi
+
+          if [[ "$actual_run_id" != "$EXPECTED_RUN_ID" || "$actual_run_attempt" != "$EXPECTED_RUN_ATTEMPT" ]]; then
+            echo "::error::Bundle metadata run provenance does not match the manually selected CI run ID and attempt."
+            exit 1
+          fi
+
+          if [[ "$actual_head_sha" != "$EXPECTED_HEAD_SHA" ]]; then
+            echo "::error::Bundle metadata commit SHA does not match the selected CI run."
+            exit 1
+          fi
 
       - name: Sign in to Azure with OIDC
         uses: azure/login@v2.3.1
@@ -131,17 +226,24 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          function_app_name="$(az deployment group create \
+
+          deployment_json="$(mktemp)"
+          trap 'rm -f "$deployment_json"' EXIT
+
+          az deployment group create \
             --name "infrastructure-${{ github.run_id }}" \
             --resource-group "$RESOURCE_GROUP" \
-            --template-file deployment/main.bicep \
-            --parameters deployment/main.bicepparam \
-            --query properties.outputs.functionAppName.value \
-            --output tsv)"
+            --template-file deploy-bundle/infrastructure/main.json \
+            --parameters @deploy-bundle/infrastructure/main.parameters.json \
+            --output json \
+            > "$deployment_json"
+
+          function_app_name="$(jq -r '.properties.outputs.functionAppName.value // empty' "$deployment_json")"
           if [[ -z "$function_app_name" ]]; then
             echo "::error::Infrastructure deployment did not return a Function App name."
             exit 1
           fi
+
           echo "FUNCTION_APP_NAME=$function_app_name" >> "$GITHUB_ENV"
 
       - name: Deploy application artifact
@@ -151,4 +253,21 @@ jobs:
           az functionapp deployment source config-zip \
             --resource-group "$RESOURCE_GROUP" \
             --name "$FUNCTION_APP_NAME" \
-            --src function-app.zip
+            --src deploy-bundle/function-app.zip
+
+      - name: Summarize deployed version
+        env:
+          VERSION: ${{ needs.resolve.outputs.version }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo
+            echo "## Deployment completed"
+            echo
+            echo "- Environment: \`${ENVIRONMENT}\`"
+            echo "- Resource group: \`${RESOURCE_GROUP}\`"
+            echo "- Function App: \`${FUNCTION_APP_NAME}\`"
+            echo "- Deployed CI version: \`${VERSION}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
