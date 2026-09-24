@@ -1,6 +1,6 @@
 # Azure infrastructure
 
-**Last reviewed:** 2026-09-21
+**Last reviewed:** 2026-09-23
 
 ## Overview
 
@@ -9,9 +9,9 @@ a Node.js Azure Function. Infrastructure must be defined in Bicep and optimized
 for a low-traffic, low-cost production workload.
 
 This document covers the V1 production hosting contract for the existing Bicep
-template and its corresponding Azure Functions deployment shape. Building and
-publishing the application remain operator-run steps outside the infrastructure
-workflow.
+template and its corresponding Azure Functions deployment shape. CI builds and
+publishes the deployable application bundle from trusted `master` pushes, while
+manual deployment remains a separate protected workflow step.
 
 ## Goals
 
@@ -170,7 +170,7 @@ Do not output secret values, storage keys, connection strings, or signed URLs.
 
 ## Deployment automation prerequisites
 
-The infrastructure workflow deploys into an existing resource group. An
+The deployment workflow deploys into an existing resource group. An
 authorized Azure administrator must perform this one-time bootstrap outside the
 workflow:
 
@@ -193,30 +193,47 @@ The client, tenant, and subscription IDs are configuration rather than secrets
 or Bicep parameters. The workflow uses GitHub OIDC and does not store a client
 secret, publish profile, or Azure credential JSON.
 
-An operator manually dispatches **Deploy Azure infrastructure**, supplies the
-existing resource-group name, and selects the GitHub environment. The workflow
-serializes deployments to the same environment and resource group. It runs
-Bicep lint and build, Azure deployment validation, and what-if in order. The
-environment-scoped IDs require approval of the validation job first. Deployment
-is a separate protected-environment job, so the operator must inspect the
-what-if output before approving that job. The workflow then deploys
-`deployment/main.bicep` with `deployment/main.bicepparam`, which fixes
-`environmentName` to `prod`.
+The **CI** workflow keeps Bicep format, lint, and build plus `npm ci`,
+`npm run typecheck`, `npm test`, and `npm run build` on both pull requests and
+pushes. Only successful `master` push runs publish deployable bundles, retained
+for 30 days, versioned as `ci-<run-id>.<run-attempt>-<short-sha>`. Each bundle
+contains:
+
+- `function-app.zip` with compiled output and production dependencies
+- `infrastructure/main.json` compiled from `deployment/main.bicep`
+- `infrastructure/main.parameters.json` compiled from
+  `deployment/main.bicepparam`
+- `metadata.json` recording the version, full commit SHA, CI run ID, and CI run
+  attempt
+
+An operator manually dispatches **Deploy Azure Function**, supplies a CI
+run ID and run attempt from a successful `master` push of the **CI** workflow,
+and selects the GitHub environment. The workflow serializes deployments to the
+same environment and resource group, verifies that exact attempt completed the
+validation and publish jobs successfully, confirms the retained artifact and its
+metadata, then deploys the compiled ARM template and prebuilt application ZIP.
+It does not check out the repository, build application code, compile Bicep,
+package dependencies, lint, test, type-check, or run Azure validation or
+what-if. The bundled parameter file still fixes `environmentName` to `prod`.
 
 This automation does not create the resource group or deployment identity,
-assign bootstrap permissions, provision secrets, build or publish application
-code, or operate the Telegram webhook.
+assign bootstrap permissions, provision secrets, rebuild or repackage
+application code, or operate the Telegram webhook.
 
 ## Application deployment and operations
 
-- Build the TypeScript sources before packaging the app for Azure Functions.
+- CI is the sole production builder. Operators deploy only retained CI bundles.
 - The deployment package must include at least:
   - `dist/`
   - `host.json`
   - `package.json`
   - `package-lock.json`
+  - production-only `node_modules/`
 - `package.json` must point Azure Functions at the compiled function entrypoints
   under `dist/functions/*.js`.
+- Deploy the compiled `infrastructure/main.json` and
+  `infrastructure/main.parameters.json` files from the selected CI bundle rather
+  than recompiling Bicep during deployment.
 - The production Function App route is `POST /api/telegram/webhook`.
 - Operators register or rotate the Telegram webhook separately after publishing
   code and populating the Key Vault secrets. Runtime code must not call
@@ -234,8 +251,12 @@ code, or operate the Telegram webhook.
 ## Acceptance criteria
 
 - `az bicep build` completes without errors.
-- A resource-group deployment validation and what-if operation complete without
-  errors.
+- CI preserves the existing validation checks on pull requests and pushes.
+- Only successful `master` push CI runs publish deployable bundles.
+- Each published bundle records the full commit SHA, CI run ID, and CI run
+  attempt and expires after 30 days.
+- The manual deployment workflow consumes an explicitly selected CI run ID and
+  run attempt, verifies their provenance, and does not rebuild artifacts.
 - Repeating the deployment with unchanged parameters produces no modifications.
 - The Function App uses the `FC1` plan, Node.js 22, 2,048 MB instances, a maximum
   of 10 instances, and zero always-ready instances.
