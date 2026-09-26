@@ -41,7 +41,7 @@ This section extends the bot-only [hosting contract](001-azure-hosting.md), with
 
 **V1 acceptance:** A successful protected deployment makes the Hello World site available at the provisioned HTTPS endpoint, from the same commit as the deployed bot package and Bicep template. A missing/expired bundle, invalid metadata, missing static asset, token retrieval failure, or site deployment failure produces a failed workflow with no silent skip. The deployment workflow never builds the app. Tests that validate the bundle and deploy gate should cover both compatible and incompatible artifact layouts.
 
-The current Free-plan frontend and separate Function App remain distinct origins. **V1 makes no settings API calls and needs no API authentication or CORS configuration.** When settings are introduced, implement the Telegram `initData` validation and origin policy described above in a separately reviewed change. The under-$1 estimate below assumes that later settings phase and does not include a production Standard-plan/session-based authentication design.
+The current Free-plan frontend and separate Function App remain distinct origins. **V1 makes no settings API calls and needs no API authentication or CORS configuration.** When settings are introduced, implement the Telegram `initData` validation and origin policy described above in a separately reviewed change. The under-$1 estimate below assumes the later settings phase and does not include a production Standard-plan/session-based authentication design.
 
 ## Cost model (USD, East US example)
 
