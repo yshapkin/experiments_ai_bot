@@ -1,6 +1,6 @@
 # Telegram Mini App infrastructure proposal
 
-**Status:** Proposal, 26 September 2026. This repository already runs a Telegram bot webhook on Azure Functions Flex Consumption with a user-assigned managed identity, Key Vault, Application Insights, and a Standard LRS StorageV2 account ([current deployment](../deployment/main.bicep)). It does **not** yet implement a Mini App or user settings. This proposal assumes a static Mini App, simple per-user settings, and up to 1,000 monthly active users.
+**Status:** Proposal, 26 September 2026. This repository already runs a Telegram bot webhook on Azure Functions Flex Consumption with a user-assigned managed identity, Key Vault, Application Insights, and a Standard LRS StorageV2 account ([current deployment](../../deployment/main.bicep)). It does **not** yet implement a Mini App or user settings. This proposal assumes a static Mini App, simple per-user settings, and up to 1,000 monthly active users.
 
 ## Decision
 
