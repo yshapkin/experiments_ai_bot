@@ -43,6 +43,7 @@ var identityName = 'id-${resourceNameToken}'
 var storageAccountName = 'st${applicationNameToken}${environmentNameToken}${nameSuffix}'
 var servicePlanName = 'asp-${resourceNameToken}'
 var functionAppName = 'func-${resourceNameToken}'
+var staticWebAppName = 'swa-${resourceNameToken}'
 var keyVaultName = 'kv-${resourceNameToken}'
 var logAnalyticsWorkspaceName = 'log-${resourceNameToken}'
 var applicationInsightsName = 'appi-${resourceNameToken}'
@@ -110,6 +111,17 @@ resource servicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
     reserved: true
     zoneRedundant: false
   }
+}
+
+resource staticWebApp 'Microsoft.Web/staticSites@2024-04-01' = {
+  name: staticWebAppName
+  location: location
+  sku: {
+    name: 'Free'
+    tier: 'Free'
+  }
+  tags: resourceTags
+  properties: {}
 }
 
 resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
@@ -297,6 +309,15 @@ output functionAppDefaultHostName string = functionApp.properties.defaultHostNam
 
 @description('Function App HTTPS base URL.')
 output functionAppBaseUrl string = 'https://${functionApp.properties.defaultHostName}'
+
+@description('Static Web App resource ID.')
+output staticWebAppResourceId string = staticWebApp.id
+
+@description('Static Web App name.')
+output staticWebAppName string = staticWebApp.name
+
+@description('Static Web App default hostname.')
+output staticWebAppDefaultHostName string = staticWebApp.properties.defaultHostname
 
 @description('Key Vault resource ID.')
 output keyVaultResourceId string = keyVault.id
