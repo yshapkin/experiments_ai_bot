@@ -9,7 +9,7 @@ Use **Azure Static Web Apps (Free)** for the HTTPS frontend, the **existing Azur
 ```
 Telegram client -> Static Web Apps (frontend)
                 -> existing Function App /api/settings -> Azure Table Storage
-                                                   (managed identity, private table)
+                                                   (managed identity, authenticated table access)
 ```
 
 The Mini App sends Telegram's raw `initData` to the API on each request. The API validates its signature with the existing bot token from Key Vault, checks `auth_date` against a short configured maximum age, extracts the verified Telegram user ID, and only then reads or writes that user's settings. Never trust `initDataUnsafe`, a client-supplied user ID, or a browser-side storage credential. Give the existing Function identity **Storage Table Data Contributor** access scoped to the settings table (or storage account if table-level assignment is impractical), and access Table Storage via its identity, not an account key. This fits the current account's `allowSharedKeyAccess: false` setting. Do not make the table public or expose credentials to the frontend. Configure CORS on the Function App to permit only the Mini App origin, including preflight requests; CORS is not authentication. Static Web Apps' built-in authentication is not a substitute for Telegram `initData` verification.
