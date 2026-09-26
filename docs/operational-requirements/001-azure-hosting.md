@@ -12,6 +12,10 @@ This document covers the V1 production hosting contract for the existing Bicep
 template and its corresponding Azure Functions deployment shape. CI builds and
 publishes the deployable application bundle from trusted `master` pushes, while
 manual deployment remains a separate protected workflow step.
+The [Mini App V1 release contract](002-telegram-mini-app-infrastructure.md#v1-build-and-deployment-contract)
+extends this bot-only resource list and release bundle with Static Web Apps
+hosting and a frontend payload; its requirements apply when that feature is
+implemented, while this document continues to govern the bot resources.
 
 ## Goals
 
