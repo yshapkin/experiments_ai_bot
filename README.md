@@ -109,9 +109,11 @@ start.
 
 ## Azure infrastructure
 
-The [Telegram Mini App infrastructure proposal](docs/operational-requirements/002-telegram-mini-app-infrastructure.md)
-evaluates hosting and storage for a future settings feature and its incremental
-pilot costs. It has not been implemented.
+The [Telegram Mini App V1 specification](docs/functional-requirements/002-telegram-mini-app.md)
+defines a TypeScript + Vite Hello World frontend and its release acceptance
+criteria. The [infrastructure proposal](docs/operational-requirements/002-telegram-mini-app-infrastructure.md)
+specifies CI artifacts and deployment for V1, plus later settings storage and
+pilot costs. Neither feature has been implemented.
 
 The resource-group-scoped Bicep definition in
 [`deployment/main.bicep`](deployment/main.bicep) provisions the low-cost Azure
