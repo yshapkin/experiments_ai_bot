@@ -109,6 +109,10 @@ start.
 
 ## Azure infrastructure
 
+The [Telegram Mini App infrastructure proposal](docs/telegram-mini-app-infrastructure.md)
+evaluates hosting and storage for a future settings feature and its incremental
+pilot costs. It has not been implemented.
+
 The resource-group-scoped Bicep definition in
 [`deployment/main.bicep`](deployment/main.bicep) provisions the low-cost Azure
 Functions Flex Consumption hosting resources defined in the
