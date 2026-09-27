@@ -28,8 +28,7 @@ and active approved plan.
 
 1. Read the run file's current state, active plan version, applicable decisions,
    artifact manifest, and latest relevant report.
-2. Validate that the trigger is `USER_APPROVED`, `PREAUTHORIZED_NEXT_STAGE`, or
-   `REWORK_APPROVED`.
+2. Validate that the trigger is `USER_SELECTED` or `REWORK_APPROVED`.
 3. Confirm the requested work is fully specified and within the active plan.
 
 If a decision is missing, the plan is infeasible, or implementation requires a
@@ -43,6 +42,9 @@ scope change, append a `BLOCKED` report and stop.
 - Run existing focused tests, checks, or builds so you do not knowingly hand
   broken code to Tester.
 - Do not add or expand unit-test coverage assigned to Tester.
+- Use only local, isolated validation. Never access Azure, GitHub Actions, live
+  APIs, deployed services, databases, queues, webhooks, or other real resources.
+  Use mocks, fakes, fixtures, or local static validation instead.
 - Do not revise the plan, review your own work, invoke agents, commit, or push.
 
 ## Reporting
@@ -57,5 +59,5 @@ return only the run path. Include:
 - blockers, failures, and remaining tasks;
 - optional out-of-scope proposals, clearly separated from required work.
 
-Do not propose the final commit message. Commandeer creates it after testing and
-review from the final artifact manifest.
+Do not propose the final commit message. Manager creates it from the final
+artifact manifest when the user chooses to finish.

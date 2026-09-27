@@ -1,10 +1,10 @@
 # Agent Orchestration
 
-**Last reviewed:** 2026-09-21
+**Last reviewed:** 2026-09-27
 
 ## Overview
 
-The repository uses a user-facing **Commandeer** agent to coordinate four
+The repository uses a user-facing **Manager** agent to coordinate four
 specialized agents:
 
 - **Planner**
@@ -38,20 +38,25 @@ The profiles under `/.github/agents` must work in:
 Use portable tool aliases (`agent`, `read`, `search`, `edit`, `execute`, and
 `web`) whenever a capability is needed across environments.
 
-Planner, Developer, Tester, and Reviewer are not user-invocable. Commandeer
+Planner, Developer, Tester, and Reviewer are not user-invocable. Manager
 invokes them through the portable `agent` tool alias. The specialists do not
 receive the `agent` tool.
 
 ## Goals
 
 - Accept a request from text, a file, a GitHub user story, or a GitHub issue.
-- Produce an implementation plan with explicit scope and acceptance criteria.
-- Preserve user control at planning, rework, and completion gates.
+- Let Planner gather missing requirements and produce an implementation plan
+   with explicit scope and acceptance criteria.
+- Preserve user control after every specialist result.
 - Share context through durable, reviewable artifacts instead of hidden chat
   state.
-- Add focused unit tests when the implementation has unit-testable behavior.
-- Review either a plan or completed implementation and test changes.
+- Inspect tests, add focused missing coverage, measure coverage, and verify that
+   meaningful tests detect controlled behavior mutations.
+- Review the latest Planner, Developer, or Tester result when the user selects
+   Reviewer.
 - Surface optional follow-up proposals without silently expanding scope.
+- Keep all validation local and isolated from real Azure, CI, and external
+   resources.
 
 ## Workflow Artifacts
 
@@ -108,7 +113,7 @@ The run file is the execution record and contains:
 
 - **Plan path:** {/plans/<task-slug>-plan.md}
 - **Active plan version:** {number or "not approved"}
-- **Stage:** Planning | Implementation | Testing | Review | Rework | Complete | Blocked
+- **Stage:** Requirements | Planning | Implementation | Testing | Review | Rework | Complete | Blocked
 - **Status:** {Current machine-readable status}
 - **Task progress:** {completed} of {total}
 - **Last action:** {Most recent completed transition}
@@ -129,10 +134,10 @@ The run file is the execution record and contains:
 
 ## Completion
 
-{Final summary and proposed commit message, written by Commandeer}
+{Final summary and proposed commit message, written by Manager}
 ```
 
-Commandeer may update `Current State`, `Artifact Manifest`, and `Completion`,
+Manager may update `Current State`, `Artifact Manifest`, and `Completion`,
 and may append exact user decisions under `Decisions`. Specialists only append
 their own reports under `Reports`. Planner creates both files.
 
@@ -154,13 +159,11 @@ trigger: <transition trigger>
 Allowed triggers:
 
 - `NEW_REQUEST`: initial Planner invocation before artifacts exist.
-- `USER_APPROVED`: the user approved a plan or selected a user-controlled path.
-- `PREAUTHORIZED_NEXT_STAGE`: a previously approved workflow is advancing to
-  its next non-destructive stage.
-- `AUTOMATIC_VALIDATION`: implementation is advancing to testing or review.
+- `USER_RESPONSE`: Planner is processing answers to its requirements questions.
+- `USER_SELECTED`: the user selected the next specialist and bounded action.
 - `REWORK_APPROVED`: the user approved a specific rework action.
 
-Commandeer writes exact user decisions to the run file before invoking the next
+Manager writes exact user decisions to the run file before invoking the next
 specialist. Specialists record the trigger in their report; they never invent or
 duplicate a user decision.
 
@@ -169,7 +172,7 @@ Every specialist report starts with:
 ```markdown
 ### Report {N}: {Actor} - {Action}
 
-- **Status:** SUCCESS | NOT_APPLICABLE | BLOCKED | FAILED | APPROVED | NEEDS_REVISION | REJECTED
+- **Status:** SUCCESS | NEEDS_INPUT | NOT_APPLICABLE | BLOCKED | FAILED | APPROVED | NEEDS_REVISION | REJECTED
 - **Trigger:** {Transition trigger}
 - **Result:** {Concise outcome}
 - **Files changed:** {Paths or "None"}
@@ -183,36 +186,39 @@ finding rather than an optional proposal.
 
 ## Agent Responsibilities
 
-### Commandeer
+### Manager
 
-Commandeer is the only user-facing agent. It:
+Manager is the primary user-facing agent. It:
 
-1. Sends a new request and referenced resources to Planner.
-2. Presents the plan and waits for the user to choose implementation or plan
-   review.
-3. Records user decisions and workflow transitions in the run file.
-4. Invokes specialists with the transition contract.
-5. Advances successful, non-destructive stages without requesting a duplicate
-   user decision.
-6. Presents blockers and review failures before rework.
+1. Sends every new request and referenced resources to Planner.
+2. Relays Planner's user-facing requirements questions unchanged, records the
+   user's exact answers, and returns them to Planner until the plan is ready.
+3. Presents every specialist result before asking the user to select the next
+   action.
+4. Records user decisions and workflow transitions in the run file.
+5. Invokes only the specialist and bounded action selected by the user.
+6. Presents blockers, failures, review findings, and proposed resolutions before
+   requesting rework approval.
 7. Updates the artifact manifest from specialist reports.
-8. After approval, writes the completion record and derives the proposed commit
-   message from the final artifact manifest and reports.
-9. Presents optional proposals as separate follow-up choices.
+8. Writes completion and a proposed commit message only when implementation is
+   finished and the user chooses to finish.
 
-Commandeer does not research, plan, implement, review source, run commands,
+Manager does not research, plan, implement, test, review source, run commands,
 commit, or push. Its edit capability is limited to the run file.
 
 ### Planner
 
 Planner:
 
-1. Researches the request and relevant repository context.
-2. Creates the plan and run files for a new request.
-3. Defines explicit scope, non-goals, concrete tasks, acceptance criteria, and
-   open questions.
-4. Appends a complete plan version for approved plan rework.
-5. Appends one planning report to the run file.
+1. Owns requirements discovery and writes concise user-facing questions that
+   Manager relays without reinterpretation.
+2. Researches the request and relevant repository context.
+3. Creates the plan and run files for a new request.
+4. Reports `NEEDS_INPUT` while requirements remain unresolved.
+5. Defines explicit scope, non-goals, concrete tasks, acceptance criteria, and
+   validation once enough requirements are known.
+6. Appends a complete plan version after user responses or approved plan rework.
+7. Appends one planning report per invocation to the run file.
 
 Planner does not implement, edit source or configuration, run tests or builds,
 commit, or invoke another agent.
@@ -222,8 +228,8 @@ commit, or invoke another agent.
 Developer:
 
 1. Implements only the active approved plan version.
-2. Runs existing focused tests, checks, or builds so it does not knowingly hand
-   broken code to Tester.
+2. Runs existing focused local tests, checks, or builds without accessing real
+   services or CI systems.
 3. Does not add or expand unit-test coverage assigned to Tester.
 4. Appends one implementation report, including changed files and validation
    evidence.
@@ -233,39 +239,42 @@ final commit message, invoke another agent, commit, or push.
 
 ### Tester
 
-Tester runs after an unblocked implementation report and first determines
-testing applicability:
+Tester runs only when selected by the user after an unblocked implementation
+report and first determines testing applicability:
 
-- `SUCCESS`: unit-testable behavior exists; focused unit tests were added or
-  updated and the relevant test command passed.
+- `SUCCESS`: unit-testable behavior exists; focused tests were inspected and
+   updated as needed, coverage was measured, controlled mutation checks proved
+   the tests detect broken behavior, and the relevant test command passed.
 - `NOT_APPLICABLE`: no unit-testable behavior exists, with a concise reason.
 - `BLOCKED`: a production defect, missing decision, or invalid test boundary
   prevents correct tests.
 - `FAILED`: the test command or test infrastructure failed unexpectedly.
 
 Tester covers observable behavior, validation, error handling, and relevant
-edge cases. Tester does not test dependency injection or logging and does not
-edit production source or configuration.
+edge cases. It may make a small temporary production-code mutation only to prove
+that a targeted test fails, must restore that mutation immediately, and must
+rerun the test successfully. It never leaves production changes behind.
 
 ### Reviewer
 
-Reviewer can run:
-
-- after Planner, to review a plan selected by the user;
-- after Tester reports `SUCCESS` or `NOT_APPLICABLE`, to review implementation
-  and test changes.
-
-Reviewer appends one structured report and never edits reviewed content.
+Reviewer can run after Planner, Developer, or Tester when selected by the user.
+It appends one structured report, proposes a concrete resolution for every
+issue, and never edits reviewed content.
 
 ## Tool Boundaries
 
 | Agent | Allowed actions | Not allowed |
 |---|---|---|
-| Commandeer | Invoke specialists; read plan and run files; edit only the run file; message the user | Research; edit plan, source, configuration, or tests; run commands; review code; commit |
-| Planner | Read/search repository; fetch a referenced issue; create or append plan versions; create the run file; append planning reports | Edit implementation files; run tests or builds; implement; commit |
-| Developer | Read/edit implementation files; run focused existing validation; append implementation reports | Revise plan; add Tester-owned unit coverage; review; message user; commit |
-| Tester | Read implementation and tests; edit focused unit tests; run relevant unit tests; append testing reports | Edit production source or configuration; test dependency injection or logging; plan; review; commit |
-| Reviewer | Read files and diffs; use non-mutating Git inspection; append review reports | Edit reviewed content; implement fixes; run mutating commands; message user; commit |
+| Manager | Invoke specialists; read plan and run files; edit only the run file; message the user | Research; edit plan, source, configuration, or tests; run commands; review code; commit |
+| Planner | Read/search repository; fetch a referenced issue; create or append plan versions; create the run file; append planning reports; author user-facing requirements questions | Edit implementation files; run tests or builds; implement; commit |
+| Developer | Read/edit implementation files; run focused local validation; append implementation reports | Revise plan; add Tester-owned unit coverage; review; access real resources; message user; commit |
+| Tester | Read implementation and tests; edit focused tests; measure coverage; run tests and reversible mutation checks; append testing reports | Leave production mutations; access real resources; plan; review; commit |
+| Reviewer | Read files and diffs; use local non-mutating inspection; append review reports and proposed resolutions | Edit reviewed content; implement fixes; access real resources; message user; commit |
+
+All specialists must use mocks, fakes, fixtures, static analysis, or local
+emulators that require no external account. They must not access Azure,
+GitHub Actions, live APIs, deployed services, databases, queues, webhooks, or
+other real resources for validation.
 
 ## Review Output
 
@@ -279,7 +288,7 @@ Reviewer includes this detail after the common report fields:
 **Strengths:** {What was done well}
 
 **Issues:** {If none, say "None"}
-- **[CRITICAL | MAJOR | MINOR]** {Issue with concrete reference}
+- **[CRITICAL | MAJOR | MINOR]** {Issue with concrete reference, impact, and proposed resolution}
 
 **Recommendations:** {Specific advisory actions}
 ```
@@ -293,54 +302,52 @@ Status meanings:
 
 ## Coordination Flow
 
-1. Commandeer invokes Planner with `NEW_REQUEST`.
-2. Planner creates the plan and run files and returns their paths.
-3. Commandeer presents the plan and waits for the user to choose implementation
-   or plan review.
-4. Commandeer records the decision and invokes the selected agent with
-   `USER_APPROVED`.
-5. After Developer reports `SUCCESS`, Commandeer invokes Tester with
-   `AUTOMATIC_VALIDATION`.
-6. After Tester reports `SUCCESS` or `NOT_APPLICABLE`, Commandeer invokes
-   Reviewer with `AUTOMATIC_VALIDATION`.
-7. A blocker, failure, `NEEDS_REVISION`, or `REJECTED` result stops the workflow.
-   Commandeer presents it and waits for explicit rework approval.
-8. After code review reports `APPROVED`, Commandeer writes the completion record
-   and final proposed commit message.
-9. Commandeer presents delivered artifacts, validation evidence, deviations,
-   decisions required, and optional proposals, then waits for the user's manual
-   commit or next request.
+1. Manager invokes Planner with `NEW_REQUEST`.
+2. If Planner reports `NEEDS_INPUT`, Manager presents Planner's questions,
+   records the answers, and invokes Planner with `USER_RESPONSE`.
+3. When Planner reports `SUCCESS`, Manager presents the plan and asks the user
+   to choose Developer, Reviewer, or stop.
+4. After Developer reports, Manager presents the implementation and local
+   validation evidence, then asks the user to choose Tester, Reviewer, approved
+   rework, finish, or stop.
+5. After Tester reports, Manager presents test changes, coverage, and mutation
+   evidence, then asks the user to choose Reviewer, approved rework, finish, or
+   stop.
+6. Reviewer may assess the latest Planner, Developer, or Tester result. Manager
+   presents its findings and proposed resolutions, then asks the user to choose
+   the next action.
+7. A blocker, failure, `NEEDS_REVISION`, or `REJECTED` result never triggers
+   automatic rework. Manager waits for explicit approval.
+8. No specialist transition is automatic.
 
 ## Stopping Rules
 
-Commandeer waits for explicit user input:
+Manager waits for explicit user input:
 
-1. After planning, before implementation or plan review.
-2. After any blocker or unexpected failure.
-3. After `NEEDS_REVISION` or `REJECTED`, before rework.
+1. Whenever Planner requests requirements.
+2. After every Planner, Developer, Tester, or Reviewer result.
+3. Before any rework.
 4. After three rework attempts.
 5. After completion, before any commit, deployment, or follow-up proposal.
-
-No duplicate approval is required for preauthorized testing and review stages.
 
 ## State Tracking
 
 Every user-facing response contains:
 
-- **Current stage:** Planning | Implementation | Testing | Review | Rework | Complete | Blocked
+- **Current stage:** Requirements | Planning | Implementation | Testing | Review | Rework | Complete | Blocked
 - **Task progress:** `{completed}` of `{total}` tasks implemented
 - **Last action:** last persisted state transition
-- **Next action:** next transition or required user confirmation
+- **Result:** concise summary of the latest specialist report
+- **Next action:** user-selectable transitions or required confirmation
 
 These fields are derived from `Current State` in the run file.
 
 ## Completion
 
-Commandeer writes completion only after:
-
-- all active plan tasks are implemented;
-- Tester reports `SUCCESS` or `NOT_APPLICABLE`;
-- Reviewer reports `APPROVED`.
+Manager writes completion only after all active plan tasks are implemented and
+the user explicitly chooses to finish. Testing and review are user-selected,
+not mandatory automatic stages; completion records either their evidence or
+that the user skipped them.
 
 Completion contains:
 
@@ -360,31 +367,30 @@ finalization.
 ```mermaid
 flowchart TD
     User["User request"]
-    Commandeer["Commandeer<br/>User communication and run state"]
-    Planner["Planner<br/>Plan and task contract"]
-    Gate1{"User chooses<br/>implement or plan review"}
+   Manager["Manager<br/>User communication and run state"]
+   Planner["Planner<br/>Requirements and plan"]
+   Requirements{"More requirements<br/>needed?"}
+   Choice{"User chooses<br/>next action"}
     Developer["Developer<br/>Implementation and existing checks"]
-    Tester{"Tester<br/>Unit testing applicable?"}
-    Reviewer["Reviewer<br/>Plan or code review"]
-    Result{"Result"}
-    Gate2["User rework approval"]
-    Complete["Commandeer<br/>Completion and commit proposal"]
+   Tester["Tester<br/>Tests, coverage, and mutation checks"]
+   Reviewer["Reviewer<br/>Review latest specialist result"]
+   Complete["Manager<br/>Completion and commit proposal"]
 
-    User --> Commandeer
-    Commandeer --> Planner
-    Planner --> Commandeer
-    Commandeer --> Gate1
-    Gate1 -->|Implement| Developer
-    Gate1 -->|Review plan| Reviewer
-    Developer -->|SUCCESS| Tester
-    Tester -->|SUCCESS| Reviewer
-    Tester -->|NOT_APPLICABLE| Reviewer
-    Reviewer --> Result
-    Result -->|APPROVED code| Complete
-    Result -->|APPROVED plan| Commandeer
-    Result -->|BLOCKED / FAILED / NEEDS_REVISION / REJECTED| Gate2
-    Gate2 -->|Plan rework| Planner
-    Gate2 -->|Code rework| Developer
+   User --> Manager
+   Manager --> Planner
+   Planner --> Requirements
+   Requirements -->|Yes: ask user| Manager
+   Requirements -->|No: present plan| Manager
+   Manager --> Choice
+   Choice -->|Implement| Developer
+   Choice -->|Write or inspect tests| Tester
+   Choice -->|Review latest result| Reviewer
+   Choice -->|Approved plan rework| Planner
+   Choice -->|Approved code rework| Developer
+   Developer --> Manager
+   Tester --> Manager
+   Reviewer --> Manager
+   Choice -->|Finish| Complete
     Complete --> User
 ```
 
