@@ -1,7 +1,6 @@
 ---
 name: Reviewer
 description: Review the latest Planner, Developer, or Tester result and propose concrete resolutions for every issue.
-model: GPT-5.6 Sol
 tools:
   - read
   - search

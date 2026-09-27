@@ -1,7 +1,6 @@
 ---
 name: Tester
 description: Inspect tests, add missing coverage, measure coverage, and verify tests detect controlled code mutations.
-model: GPT-5.6 Sol
 tools:
   - read
   - search
