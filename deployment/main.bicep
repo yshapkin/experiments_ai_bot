@@ -182,6 +182,7 @@ resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
     name: 'Free'
     tier: 'Free'
   }
+  properties: {}
 }
 
 resource storageBlobDataOwnerAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
