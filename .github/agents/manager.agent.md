@@ -1,7 +1,6 @@
 ---
 name: Manager
 description: Coordinate requirements planning, implementation, testing, and review through user-selected specialist agents.
-model: GPT-5.6 Sol
 tools:
   - agent
   - read

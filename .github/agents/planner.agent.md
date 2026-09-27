@@ -1,7 +1,6 @@
 ---
 name: Planner
 description: Gather requirements through user-facing questions and prepare immutable implementation plans for Developer.
-model: GPT-5.6 Sol
 tools:
   - read
   - search

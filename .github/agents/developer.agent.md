@@ -1,7 +1,6 @@
 ---
 name: Developer
 description: Implement an approved plan and report changed artifacts and validation evidence.
-model: GPT-5.6 Sol
 tools:
   - read
   - search
