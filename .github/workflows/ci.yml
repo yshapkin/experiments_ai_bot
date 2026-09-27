@@ -34,7 +34,7 @@ jobs:
           trap 'rm -f "$formatted_file" "$lint_results" "$lint_diagnostics"' EXIT
 
           for file in deployment/main.bicep deployment/main.bicepparam; do
-            az bicep format --file "$file" --stdout > "$formatted_file"
+            az bicep format --file "$file" --outfile "$formatted_file"
             if ! diff -u "$file" "$formatted_file"; then
               echo "::error file=$file::Run 'az bicep format --file $file' to fix formatting."
               exit 1
