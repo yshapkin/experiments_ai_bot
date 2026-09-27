@@ -1,6 +1,6 @@
 # Azure infrastructure
 
-**Last reviewed:** 2026-09-23
+**Last reviewed:** 2026-09-27
 
 ## Overview
 
@@ -132,7 +132,12 @@ workbook, alert, or action group.
 
 ### Function App
 
-- Use Azure Functions runtime v4 with Node.js 22.
+- Use Azure Functions runtime v4 with Node.js 24.
+- Node.js 24 support was reviewed on 2026-09-27 against the Microsoft Learn
+  [Azure Functions supported languages](https://learn.microsoft.com/en-us/azure/azure-functions/supported-languages)
+  and
+  [Flex Consumption supported language stack versions](https://learn.microsoft.com/en-us/azure/azure-functions/flex-consumption-plan#supported-language-stack-versions)
+  documentation.
 - Assign only the user-assigned managed identity.
 - Configure `functionAppConfig.deployment.storage` to use the deployment blob
   container and user-assigned identity authentication.
@@ -265,7 +270,7 @@ application code, or operate the Telegram webhook.
   `master` push CI run, verifies its bundle provenance, and does not rebuild
   artifacts or silently fall back to an older run.
 - Repeating the deployment with unchanged parameters produces no modifications.
-- The Function App uses the `FC1` plan, Node.js 22, 2,048 MB instances, a maximum
+- The Function App uses the `FC1` plan, Node.js 24, 2,048 MB instances, a maximum
   of 10 instances, and zero always-ready instances.
 - The Function App can access deployment storage, Key Vault secrets, and
   Application Insights through its managed identity.

@@ -7,7 +7,7 @@ webhook.
 
 ## Prerequisites
 
-- Node.js 22
+- Node.js 24
 - npm
 - A Telegram bot token created through BotFather
 
@@ -33,13 +33,35 @@ The bot uses long polling for local development only. Keep `.env` local; it is
 ignored by Git. A missing or blank `TELEGRAM_BOT_TOKEN` stops startup before
 polling.
 
+## Mini App frontend
+
+The framework-free TypeScript/Vite source is in `src/mini-app/`. Install the
+root dependencies once, then use the root scripts:
+
+```sh
+npm run mini-app:dev
+npm run mini-app:typecheck
+npm run mini-app:build
+npm run mini-app:preview
+npm run test:mini-app:initialization
+npm run test:mini-app:build
+```
+
+The production build writes generated static files to the ignored
+`mini-app/dist/` directory. `mini-app:preview` serves those files only for
+local verification; no production frontend server is deployed.
+The two focused test commands validate the initialization lifecycle and a
+temporary production build without contacting external services. The aggregate
+`npm test`, `npm run typecheck`, and `npm run build` commands below include the
+repository-wide checks.
+
 ## MCP servers for development
 
 The workspace configuration in [`.vscode/mcp.json`](.vscode/mcp.json) adds two
 servers for VS Code with GitHub Copilot:
 
 - **Azure** runs the pinned `@azure/mcp` npm package through `npx` over stdio.
-  It defaults to read-only operations. Use Node.js 22 and npm, install the
+  It defaults to read-only operations. Use Node.js 24 and npm, install the
   [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli), and
   authenticate locally with `az login` using an account with least-privilege
   access to the intended subscription. The first launch downloads the package.
@@ -113,7 +135,9 @@ The [Telegram Mini App V1 specification](docs/functional-requirements/002-telegr
 defines a TypeScript + Vite Hello World frontend and its release acceptance
 criteria. The [infrastructure proposal](docs/operational-requirements/002-telegram-mini-app-infrastructure.md)
 specifies CI artifacts and deployment for V1, plus later settings storage and
-pilot costs. Neither feature has been implemented.
+pilot costs. The frontend source and local tooling slice is implemented, but
+CI bundle schema version 2, publication, endpoint verification, BotFather
+configuration, and settings remain unimplemented or out of scope.
 
 The resource-group-scoped Bicep definition in
 [`deployment/main.bicep`](deployment/main.bicep) provisions the low-cost Azure
@@ -229,6 +253,7 @@ Build before packaging, then publish a package that includes:
 docs/         Documentation
 plans/        Append-only agent workflow plans and execution ledgers
 src/          Functional code base
+src/mini-app/ Authored Mini App frontend
 test/         Unit tests
 deployment/   Infrastructure as Code (IaC) using Bicep
 ```
