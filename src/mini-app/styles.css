@@ -1,0 +1,44 @@
+:root {
+  color: #17212b;
+  background: #ffffff;
+  font-family:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-width: 0;
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+main {
+  display: grid;
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: clamp(1rem, 5vw, 3rem);
+  place-items: center;
+}
+
+h1 {
+  max-width: 100%;
+  margin: 0;
+  font-size: clamp(2rem, 10vw, 4.5rem);
+  line-height: 1.1;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
