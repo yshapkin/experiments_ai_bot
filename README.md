@@ -135,9 +135,12 @@ The [Telegram Mini App V1 specification](docs/functional-requirements/002-telegr
 defines a TypeScript + Vite Hello World frontend and its release acceptance
 criteria. The [infrastructure proposal](docs/operational-requirements/002-telegram-mini-app-infrastructure.md)
 specifies CI artifacts and deployment for V1, plus later settings storage and
-pilot costs. The frontend source and local tooling slice is implemented, but
-CI bundle schema version 2, publication, endpoint verification, BotFather
-configuration, and settings remain unimplemented or out of scope.
+pilot costs. The frontend source and local tooling slice, CI static-payload
+validation, bundle schema version 2 with the `mini-app/` payload, the
+deploy-time structural gate, protected publication of the prebuilt site, and
+published-endpoint verification are implemented. The first protected deployment
+run, BotFather configuration, and settings remain manual operator actions or out
+of scope.
 
 The resource-group-scoped Bicep definition in
 [`deployment/main.bicep`](deployment/main.bicep) provisions the low-cost Azure
@@ -166,11 +169,15 @@ az deployment group what-if \
 
 The **CI** workflow validates every pull request. On a successful push to
 `master`, it also creates a versioned deployment bundle retained for 30 days.
-The bundle contains the application ZIP, compiled ARM template and parameter
-JSON, and metadata identifying the commit, CI run, and attempt. The **Deploy
+The bundle contains the application ZIP, the prebuilt Mini App site under
+`mini-app/`, compiled ARM template and parameter JSON, and metadata identifying
+the schema version, commit, CI run, and attempt. CI validates the built Mini App
+output and the copied bundle payload — entry page, referenced local assets, and
+absence of symbolic links — before the bundle is uploaded. The **Deploy
 Azure Function** workflow deploys only that immutable CI bundle. It does not
-check out source or build, lint, test, validate, or run what-if during deploy,
-and it does not create secret values, register a Telegram webhook, or create a
+check out source, or build, lint, test, or run what-if during deploy; it
+verifies the downloaded bundle's provenance and structure only. It also does
+not create secret values, register a Telegram webhook, or create a
 resource group.
 
 Before using the workflow, an authorized Azure administrator must:
@@ -188,6 +195,21 @@ Before using the workflow, an authorized Azure administrator must:
    - `AZURE_CLIENT_ID`
    - `AZURE_TENANT_ID`
    - `AZURE_SUBSCRIPTION_ID`
+5. Create the environment **secret** `AZURE_STATIC_WEB_APPS_API_TOKEN` on the
+   same protected environment, from the Static Web App's deployment token
+   (Azure portal: **Static Web App → Overview → Manage deployment token**). The
+   workflow exposes it to the Static Web Apps CLI only as the process
+   environment variable `SWA_CLI_DEPLOYMENT_TOKEN`; it never retrieves,
+   derives, prints, or persists the token, and the deploy identity needs no
+   token-retrieval permission. The operator creates and rotates this secret
+   manually.
+6. Before the first protected run, confirm that the `azure/login` action commit
+   pinned in `.github/workflows/deploy.yml`
+   (`7184910d9eb2b1c5e48f7073824a90609bb9b6d6`) is the commit behind release
+   `v2.3.1`, by dereferencing the annotated tag with
+   `gh api repos/Azure/login/git/ref/tags/v2.3.1` and following `object.sha` to
+   the tag object's target commit. This check needs network access and is not
+   performed by any workflow or test.
 
 These identifiers are non-secret configuration; no Azure client secret or
 credential JSON is used. Configure required reviewers and other protection
@@ -198,10 +220,19 @@ select the GitHub environment. The workflow automatically looks up the most
 recent successful `ci.yml` run for a `master` push through the GitHub API, then
 pins that run's ID, attempt, and commit and downloads its exact
 `ci-<run-id>.<run-attempt>-<short-sha>` bundle—no run ID or attempt number is
-entered manually. The workflow verifies the retained bundle's metadata and
-required files before using OIDC to deploy its precompiled ARM JSON and
-application ZIP. If the latest successful run's bundle is missing, expired, or
-incompatible, deployment fails without falling back to an older run. The
+entered manually. The workflow verifies the retained bundle's metadata
+provenance and the structural presence of its required files, including
+`mini-app/index.html`, before using OIDC to deploy its precompiled ARM JSON and
+application ZIP, publish the prebuilt Mini App site to the production Static
+Web App with a pinned Static Web Apps CLI version, and verify that the published
+HTTPS endpoint serves this version's entry page and one local asset. Deep
+reference validation of the static payload is not repeated at deploy time; CI
+performs it once before the bundle exists. If the latest successful run's bundle
+is missing, expired, or incompatible, deployment fails without falling back to
+an older run. A failure after a component was already applied names the applied
+components; no rollback is attempted and no partial release is reported as
+success. After a successful run, an operator registers the reported HTTPS URL
+with BotFather; the repository does not automate that step. The
 selected environment's protection rules provide the approval gate, and runs
 for the same environment are serialized.
 

@@ -1,6 +1,6 @@
 # Telegram Mini App V1: Hello World
 
-**Status:** Partial implementation, 27 September 2026. The authored frontend and local build tooling exist; CI schema version 2, publication, deployed endpoint verification, BotFather configuration, settings, and the complete V1 release remain unimplemented or out of scope. See [operational requirement 002](../operational-requirements/002-telegram-mini-app-infrastructure.md#v1-build-and-deployment-contract) for the release contract.
+**Status:** Partial implementation, 28 September 2026. The authored frontend and local build tooling, CI static-payload validation, schema version 2 bundling with the `mini-app/` payload, the deploy-time structural gate, protected publication of the prebuilt site, and published-endpoint verification exist. The first protected deployment run, BotFather configuration, and the settings phase remain manual operator actions or out of scope. See [operational requirement 002](../operational-requirements/002-telegram-mini-app-infrastructure.md#v1-build-and-deployment-contract) for the release contract.
 
 ## Goal and scope
 
