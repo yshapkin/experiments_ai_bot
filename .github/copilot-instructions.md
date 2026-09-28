@@ -4,6 +4,8 @@
   repository's `typescript` skill.
 - For Bicep planning, implementation, or review, load and follow the repository's
   `bicep` skill.
+- For GitHub Actions planning, implementation, or review, load and follow the
+  repository's `github-actions` skill.
 
 # Limitations
 
