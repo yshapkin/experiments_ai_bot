@@ -8,6 +8,8 @@
     "dev": "tsx src/index.ts",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "mini-app:typecheck": "tsc -p mini-app/tsconfig.json --noEmit",
+    "mini-app:build": "vite build mini-app",
     "start": "node dist/index.js"
   },
   "license": "MIT",
@@ -25,6 +27,7 @@
   "devDependencies": {
     "@types/node": "22.20.4",
     "tsx": "4.23.15",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "6.4.1"
   }
 }
