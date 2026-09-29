@@ -331,7 +331,8 @@ jobs:
             status="$(curl --silent --show-error --location --max-time 30 \
               --output "$response_body" --write-out '%{http_code}' "${base_url}/" || true)"
             status="${status: -3}"
-            if [[ "$status" == "200" ]]; then
+            if [[ "$status" == "200" ]] &&
+              cmp -s "${BUNDLE_DIR}/mini-app/index.html" "$response_body"; then
               break
             fi
             attempt=$((attempt + 1))
@@ -346,9 +347,8 @@ jobs:
             echo "::error::The published Mini App entry page at ${base_url}/ did not return HTTP 200 after 10 attempts (last status ${status}). Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
             exit 1
           fi
-          if ! grep -q '<title>Telegram Mini App — Hello World</title>' "$response_body" ||
-            ! grep -q '<h1>Hello World</h1>' "$response_body"; then
-            echo "::error::The published Mini App entry page at ${base_url}/ does not serve this version's expected markers. Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
+          if ! cmp -s "${BUNDLE_DIR}/mini-app/index.html" "$response_body"; then
+            echo "::error::The published Mini App entry page at ${base_url}/ does not match the pinned CI bundle after 10 attempts. Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
             exit 1
           fi
 
@@ -373,8 +373,9 @@ jobs:
           if [[ -z "$asset_status" ]]; then
             asset_status="000"
           fi
-          if [[ "$asset_status" != "200" || ! -s "$response_body" ]]; then
-            echo "::error::The published Mini App asset ${base_url}/${asset_path} did not return a non-empty HTTP 200 response (status ${asset_status}). Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
+          if [[ "$asset_status" != "200" ]] ||
+            ! cmp -s "$asset_file" "$response_body"; then
+            echo "::error::The published Mini App asset ${base_url}/${asset_path} did not return HTTP 200 with the pinned CI bundle's content (status ${asset_status}). Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
             exit 1
           fi
 

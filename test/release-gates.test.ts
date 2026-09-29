@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -211,6 +212,10 @@ const verifyBundleProvenanceScript = extractStepScript(
   deployWorkflowPath,
   "Verify bundle provenance",
 );
+const verifyPublishedEndpointScript = extractStepScript(
+  deployWorkflowPath,
+  "Verify published Mini App endpoint",
+);
 
 const expectedRepository = "octo-org/experiments-ai-bot";
 const expectedCommitSha = "0123456789abcdef0123456789abcdef01234567";
@@ -256,6 +261,73 @@ function createDeployBundle(
   } else {
     writeFixtureFile(root, "bundle/mini-app/index.html", options.miniAppIndex);
   }
+}
+
+function runPublishedEndpoint(
+  root: string,
+  entryResponse: "matching" | "stale" | "stale-once",
+  assetResponse: "matching" | "stale" = "matching",
+): ScriptResult {
+  createDeployBundle(root);
+  writeFixtureFile(
+    root,
+    "bundle/mini-app/index.html",
+    '<!doctype html><title>Telegram User Profile</title><main id="app"></main>\n',
+  );
+  writeFixtureFile(root, "stale-index.html", "<h1>Old release</h1>\n");
+  writeFixtureFile(root, "stale-asset.css", "body{color:red}\n");
+
+  const bin = resolve(root, "bin");
+  writeFixtureFile(root, "bin/curl", [
+    "#!/usr/bin/env bash",
+    'while [[ "$#" -gt 1 ]]; do',
+    '  if [[ "$1" == "--output" ]]; then output="$2"; shift 2; else shift; fi',
+    "done",
+    'if [[ "$1" == */assets/* ]]; then',
+    '  if [[ "$MOCK_ASSET_RESPONSE" == "stale" ]]; then',
+    '    cp "$MOCK_STALE_ASSET" "$output"',
+    "  else",
+    '    cp "$MOCK_BUNDLE_ASSET" "$output"',
+    "  fi",
+    "else",
+    '  count="$(cat "$MOCK_COUNT")"',
+    '  echo "$((count + 1))" > "$MOCK_COUNT"',
+    '  if [[ "$MOCK_ENTRY_RESPONSE" == "stale" ]] ||',
+    '    [[ "$MOCK_ENTRY_RESPONSE" == "stale-once" && "$count" == "0" ]]; then',
+    '    cp "$MOCK_STALE_ENTRY" "$output"',
+    "  else",
+    '    cp "$MOCK_BUNDLE_ENTRY" "$output"',
+    "  fi",
+    "fi",
+    "printf '200'",
+    "",
+  ].join("\n"));
+  writeFixtureFile(root, "bin/sleep", "#!/usr/bin/env bash\nexit 0\n");
+  chmodSync(resolve(bin, "curl"), 0o755);
+  chmodSync(resolve(bin, "sleep"), 0o755);
+  writeFixtureFile(root, "request-count", "0\n");
+  writeFixtureFile(root, "summary", "");
+
+  return runScript(verifyPublishedEndpointScript, {
+    cwd: root,
+    env: {
+      BUNDLE_DIR: "bundle",
+      STATIC_WEB_APP_BASE_URL: "https://site.example",
+      STATIC_WEB_APP_NAME: "mini-app",
+      PINNED_RUN_ID: expectedRunId,
+      PINNED_RUN_ATTEMPT: expectedRunAttempt,
+      PINNED_HEAD_SHA: expectedCommitSha,
+      GITHUB_STEP_SUMMARY: resolve(root, "summary"),
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      MOCK_ENTRY_RESPONSE: entryResponse,
+      MOCK_ASSET_RESPONSE: assetResponse,
+      MOCK_BUNDLE_ENTRY: resolve(root, "bundle/mini-app/index.html"),
+      MOCK_BUNDLE_ASSET: resolve(root, "bundle/mini-app/assets/app.css"),
+      MOCK_STALE_ENTRY: resolve(root, "stale-index.html"),
+      MOCK_STALE_ASSET: resolve(root, "stale-asset.css"),
+      MOCK_COUNT: resolve(root, "request-count"),
+    },
+  });
 }
 
 describe("release gate scripts", () => {
@@ -529,6 +601,47 @@ describe("release gate scripts", () => {
         result.output,
         /Mini App payload contains symbolic link 'bundle\/mini-app\/assets\/linked\.css'/u,
       );
+    });
+  });
+
+  describe("deploy.yml published endpoint verification", () => {
+    it("accepts the pinned profile page and asset without Hello World markers", () => {
+      const root = createTemporaryRoot();
+
+      const result = runPublishedEndpoint(root, "matching");
+
+      assert.equal(result.status, 0, result.output);
+      assert.match(readFileSync(resolve(root, "summary"), "utf8"), /Verified asset path: assets\/app\.css/u);
+      assert.equal(readFileSync(resolve(root, "request-count"), "utf8").trim(), "1");
+    });
+
+    it("retries a stale HTTP 200 page until it matches the pinned bundle", () => {
+      const root = createTemporaryRoot();
+
+      const result = runPublishedEndpoint(root, "stale-once");
+
+      assert.equal(result.status, 0, result.output);
+      assert.equal(readFileSync(resolve(root, "request-count"), "utf8").trim(), "2");
+    });
+
+    it("rejects a stale HTTP 200 page after all attempts", () => {
+      const root = createTemporaryRoot();
+
+      const result = runPublishedEndpoint(root, "stale");
+
+      assert.equal(result.status, 1);
+      assert.match(result.output, /does not match the pinned CI bundle after 10 attempts/u);
+      assert.equal(readFileSync(resolve(root, "request-count"), "utf8").trim(), "10");
+    });
+
+    it("rejects an HTTP 200 asset with content different from the bundle", () => {
+      const root = createTemporaryRoot();
+
+      const result = runPublishedEndpoint(root, "matching", "stale");
+
+      assert.equal(result.status, 1);
+      assert.match(result.output, /did not return HTTP 200 with the pinned CI bundle's content/u);
+      assert.equal(readFileSync(resolve(root, "summary"), "utf8"), "");
     });
   });
 

@@ -225,7 +225,8 @@ provenance and the structural presence of its required files, including
 `mini-app/index.html`, before using OIDC to deploy its precompiled ARM JSON and
 application ZIP, publish the prebuilt Mini App site to the production Static
 Web App with a pinned Static Web Apps CLI version, and verify that the published
-HTTPS endpoint serves this version's entry page and one local asset. Deep
+HTTPS endpoint serves byte-for-byte copies of the pinned bundle's entry page
+and one local asset (retrying the entry page while the site propagates). Deep
 reference validation of the static payload is not repeated at deploy time; CI
 performs it once before the bundle exists. If the latest successful run's bundle
 is missing, expired, or incompatible, deployment fails without falling back to
