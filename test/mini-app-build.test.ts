@@ -36,9 +36,9 @@ describe("Mini App production build", () => {
       assert.ok(entryStats.size > 0);
       assert.match(
         entry,
-        /<title>Telegram Mini App — Hello World<\/title>/u,
+        /<title>Telegram User Profile<\/title>/u,
       );
-      assert.match(entry, /<h1>Hello World<\/h1>/u);
+      assert.match(entry, /<main id="app" aria-live="polite"><\/main>/u);
       assert.match(
         entry,
         /<meta\s+name="viewport"\s+content="width=device-width,\s*initial-scale=1\.0"\s*\/?>/u,

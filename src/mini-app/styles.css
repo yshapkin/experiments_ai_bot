@@ -1,44 +1,130 @@
 :root {
-  color: #17212b;
-  background: #ffffff;
+  color: var(--tg-theme-text-color, #17212b);
+  background: var(--tg-theme-bg-color, #f3f6f9);
   font-family:
-    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
 
-*,
-*::before,
-*::after {
+* {
   box-sizing: border-box;
 }
 
-html,
 body {
-  min-width: 0;
-  min-height: 100%;
+  min-width: 240px;
+  min-height: 100vh;
   margin: 0;
 }
 
-body {
+#app {
   min-height: 100vh;
-  min-height: 100dvh;
-}
-
-main {
   display: grid;
-  width: 100%;
-  min-height: 100vh;
-  min-height: 100dvh;
-  padding: clamp(1rem, 5vw, 3rem);
   place-items: center;
+  padding: 20px;
 }
 
-h1 {
-  max-width: 100%;
-  margin: 0;
-  font-size: clamp(2rem, 10vw, 4.5rem);
-  line-height: 1.1;
-  overflow-wrap: anywhere;
+.profile-card {
+  width: min(100%, 380px);
+  padding: 28px 24px 24px;
+  border: 1px solid var(--tg-theme-section-separator-color, #dce3e9);
+  border-radius: 20px;
+  color: var(--tg-theme-text-color, #17212b);
+  background: var(--tg-theme-section-bg-color, #ffffff);
+  box-shadow: 0 12px 32px rgb(23 33 43 / 10%);
+}
+
+.profile-card__avatar {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 20px;
+}
+
+.profile-card__image,
+.profile-card__avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+}
+
+.profile-card__image {
+  position: absolute;
+  inset: 0;
+  display: block;
+  object-fit: cover;
+}
+
+.profile-card__avatar-fallback {
+  display: grid;
+  place-items: center;
+  color: var(--tg-theme-button-text-color, #ffffff);
+  background: var(--tg-theme-button-color, #2481cc);
+  font-size: 42px;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+.profile-card__heading {
+  margin: 0 0 22px;
+  font-size: 1.35rem;
+  line-height: 1.25;
   text-align: center;
+}
+
+.profile-card__details {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+
+.profile-card__row {
+  min-width: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--tg-theme-secondary-bg-color, #f3f6f9);
+}
+
+.profile-card__label {
+  margin-bottom: 4px;
+  color: var(--tg-theme-subtitle-text-color, #6b7885);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.profile-card__value {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.telegram-fallback {
+  max-width: 320px;
+  margin: 0;
+  padding: 20px 24px;
+  border-radius: 16px;
+  color: var(--tg-theme-text-color, #17212b);
+  background: var(--tg-theme-section-bg-color, #ffffff);
+  box-shadow: 0 10px 28px rgb(23 33 43 / 9%);
+  font-size: 1.05rem;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+}
+
+@media (max-width: 320px) {
+  #app {
+    padding: 12px;
+  }
+
+  .profile-card {
+    padding: 22px 16px 18px;
+  }
 }
