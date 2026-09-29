@@ -249,6 +249,37 @@ describe("Mini App user information", () => {
       assert.deepEqual(events, ["rendered", "ready"]);
     });
 
+    it("calls ready only once when the same bridge initializes repeatedly", () => {
+      const events: string[] = [];
+      const bridge = {
+        initDataUnsafe: { user: { id: 3 } },
+        ready() {
+          events.push("ready");
+        },
+      };
+
+      initializeMiniApp(bridge, new FakeMiniAppView(events));
+      initializeMiniApp(bridge, new FakeMiniAppView(events));
+
+      assert.deepEqual(events, ["rendered", "ready", "rendered"]);
+    });
+
+    it("marks readiness before calling ready to prevent re-entrant calls", () => {
+      const events: string[] = [];
+      const view = new FakeMiniAppView(events);
+      const bridge = {
+        initDataUnsafe: { user: { id: 3 } },
+        ready() {
+          events.push("ready");
+          initializeMiniApp(bridge, view);
+        },
+      };
+
+      initializeMiniApp(bridge, view);
+
+      assert.deepEqual(events, ["rendered", "ready", "rendered"]);
+    });
+
     it("calls ready after fallback and keeps output when ready throws", () => {
       const events: string[] = [];
       const view = new FakeMiniAppView(events);
