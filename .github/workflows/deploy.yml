@@ -102,32 +102,73 @@ jobs:
           repository: ${{ github.repository }}
           run-id: ${{ needs.resolve-ci-run.outputs.run_id }}
 
-      - name: Verify deployment bundle
+      # Deploy-time verification is deliberately structural only. Deep
+      # validation of the Mini App payload (reference extraction,
+      # classification, decoding, resolution, and asset existence) is performed
+      # once, in ci.yml's 'Validate Mini App static output' step, against both
+      # the built tree and the copied bundle payload, before the artifact is
+      # produced. The eight-field provenance match below binds this immutable,
+      # run-scoped artifact to the CI run that passed that gate, so a second
+      # hand-written copy of those rules here would add no assurance while
+      # doubling the defect surface and allowing silent divergence.
+      - name: Verify bundle files
         shell: bash
         env:
-          EXPECTED_RUN_ID: ${{ needs.resolve-ci-run.outputs.run_id }}
-          EXPECTED_RUN_ATTEMPT: ${{ needs.resolve-ci-run.outputs.run_attempt }}
-          EXPECTED_HEAD_SHA: ${{ needs.resolve-ci-run.outputs.head_sha }}
+          BUNDLE_DIR: bundle
         run: |
           set -euo pipefail
 
+          # Bash 3.2 compatible constructs only: no mapfile/readarray, no
+          # 'declare -A', and no '${var,,}'/'${var^^}' expansions. The release
+          # gate tests extract this exact script and run it with the local
+          # bash, which is 3.2 on macOS.
+
+          BUNDLE_DIR="${BUNDLE_DIR:-bundle}"
+
           for file in \
-            bundle/function-app.zip \
-            bundle/infrastructure/main.json \
-            bundle/infrastructure/main.parameters.json \
-            bundle/metadata.json; do
+            "${BUNDLE_DIR}/function-app.zip" \
+            "${BUNDLE_DIR}/infrastructure/main.json" \
+            "${BUNDLE_DIR}/infrastructure/main.parameters.json" \
+            "${BUNDLE_DIR}/metadata.json" \
+            "${BUNDLE_DIR}/mini-app/index.html"; do
             if [[ ! -s "$file" ]]; then
               echo "::error file=$file::The pinned CI bundle is missing required non-empty file '$file'."
               exit 1
             fi
           done
 
+          # Defence in depth: the authoritative symbolic-link rejection happens
+          # in CI before the artifact is produced.
+          link="$(find "${BUNDLE_DIR}/mini-app" -type l -print -quit)"
+          if [[ -n "$link" ]]; then
+            echo "::error file=$link::The pinned CI bundle Mini App payload contains symbolic link '$link'."
+            exit 1
+          fi
+
+      - name: Verify bundle provenance
+        shell: bash
+        env:
+          BUNDLE_DIR: bundle
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          EXPECTED_RUN_ID: ${{ needs.resolve-ci-run.outputs.run_id }}
+          EXPECTED_RUN_ATTEMPT: ${{ needs.resolve-ci-run.outputs.run_attempt }}
+          EXPECTED_HEAD_SHA: ${{ needs.resolve-ci-run.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+
+          # Bash 3.2 compatible constructs only: no mapfile/readarray, no
+          # 'declare -A', and no '${var,,}'/'${var^^}' expansions. The release
+          # gate tests extract this exact script and run it with the local
+          # bash, which is 3.2 on macOS.
+
+          BUNDLE_DIR="${BUNDLE_DIR:-bundle}"
+
           if ! jq -e \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg sha "$EXPECTED_HEAD_SHA" \
             --arg runId "$EXPECTED_RUN_ID" \
             --arg runAttempt "$EXPECTED_RUN_ATTEMPT" \
-            '.bundleVersion == 1
+            '.bundleVersion == 2
               and .repository == $repository
               and .workflow == "ci.yml"
               and .event == "push"
@@ -135,37 +176,63 @@ jobs:
               and .commitSha == $sha
               and .runId == $runId
               and .runAttempt == $runAttempt' \
-            bundle/metadata.json > /dev/null; then
-            echo "::error file=bundle/metadata.json::The pinned CI bundle metadata is incompatible or does not match the resolved run, attempt, and commit."
+            "${BUNDLE_DIR}/metadata.json" > /dev/null; then
+            echo "::error file=${BUNDLE_DIR}/metadata.json::The pinned CI bundle metadata is incompatible or does not match the resolved run, attempt, and commit. Schema version 1 bundles are no longer deployable; run a fresh successful master CI run and deploy that bundle."
             exit 1
           fi
+
+      - name: Verify infrastructure templates
+        shell: bash
+        env:
+          BUNDLE_DIR: bundle
+        run: |
+          set -euo pipefail
+
+          # Bash 3.2 compatible constructs only: no mapfile/readarray, no
+          # 'declare -A', and no '${var,,}'/'${var^^}' expansions.
+
+          BUNDLE_DIR="${BUNDLE_DIR:-bundle}"
+
           if ! jq -e \
             '.["$schema"] | strings | contains("deploymentTemplate.json#")' \
-            bundle/infrastructure/main.json > /dev/null ||
+            "${BUNDLE_DIR}/infrastructure/main.json" > /dev/null ||
             ! jq -e \
               '.contentVersion == "1.0.0.0" and (.resources | type == "array")' \
-              bundle/infrastructure/main.json > /dev/null; then
-            echo "::error file=bundle/infrastructure/main.json::The pinned CI bundle does not contain a compatible ARM template."
+              "${BUNDLE_DIR}/infrastructure/main.json" > /dev/null; then
+            echo "::error file=${BUNDLE_DIR}/infrastructure/main.json::The pinned CI bundle does not contain a compatible ARM template."
             exit 1
           fi
           if ! jq -e \
             '.["$schema"] | strings | contains("deploymentParameters.json#")' \
-            bundle/infrastructure/main.parameters.json > /dev/null ||
+            "${BUNDLE_DIR}/infrastructure/main.parameters.json" > /dev/null ||
             ! jq -e \
               '.contentVersion == "1.0.0.0"
                 and (.parameters.environmentName.value | type == "string")
                 and (.parameters.environmentName.value | length > 0)' \
-              bundle/infrastructure/main.parameters.json > /dev/null; then
-            echo "::error file=bundle/infrastructure/main.parameters.json::The pinned CI bundle does not contain compatible ARM parameters."
+              "${BUNDLE_DIR}/infrastructure/main.parameters.json" > /dev/null; then
+            echo "::error file=${BUNDLE_DIR}/infrastructure/main.parameters.json::The pinned CI bundle does not contain compatible ARM parameters."
             exit 1
           fi
-          if ! unzip -t bundle/function-app.zip > /dev/null; then
-            echo "::error file=bundle/function-app.zip::The pinned CI application ZIP is invalid."
+
+      - name: Verify application package
+        shell: bash
+        env:
+          BUNDLE_DIR: bundle
+        run: |
+          set -euo pipefail
+
+          # Bash 3.2 compatible constructs only: no mapfile/readarray, no
+          # 'declare -A', and no '${var,,}'/'${var^^}' expansions.
+
+          BUNDLE_DIR="${BUNDLE_DIR:-bundle}"
+
+          if ! unzip -t "${BUNDLE_DIR}/function-app.zip" > /dev/null; then
+            echo "::error file=${BUNDLE_DIR}/function-app.zip::The pinned CI application ZIP is invalid."
             exit 1
           fi
 
       - name: Sign in to Azure with OIDC
-        uses: azure/login@v2.3.1
+        uses: azure/login@7184910d9eb2b1c5e48f7073824a90609bb9b6d6 # v2.3.1
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
@@ -175,24 +242,146 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          function_app_name="$(az deployment group create \
+          outputs_json="$(az deployment group create \
             --name "infrastructure-${{ github.run_id }}" \
             --resource-group "$RESOURCE_GROUP" \
             --template-file bundle/infrastructure/main.json \
             --parameters @bundle/infrastructure/main.parameters.json \
-            --query properties.outputs.functionAppName.value \
-            --output tsv)"
+            --query properties.outputs \
+            --output json)"
+          function_app_name="$(jq -r '.functionAppName.value // empty' <<< "$outputs_json")"
+          static_web_app_name="$(jq -r '.staticWebAppName.value // empty' <<< "$outputs_json")"
+          static_web_app_base_url="$(jq -r '.staticWebAppBaseUrl.value // empty' <<< "$outputs_json")"
           if [[ -z "$function_app_name" ]]; then
-            echo "::error::Infrastructure deployment did not return a Function App name."
+            echo "::error::Infrastructure deployment did not return a Function App name. Infrastructure changes were already applied; the Function App package and the Mini App site were not deployed. No rollback is attempted."
+            exit 1
+          fi
+          if [[ -z "$static_web_app_name" || -z "$static_web_app_base_url" ]]; then
+            echo "::error::Infrastructure deployment did not return a Static Web App name and HTTPS base URL. Infrastructure changes were already applied; the Function App package and the Mini App site were not deployed. No rollback is attempted."
             exit 1
           fi
           echo "FUNCTION_APP_NAME=$function_app_name" >> "$GITHUB_ENV"
+          echo "STATIC_WEB_APP_NAME=$static_web_app_name" >> "$GITHUB_ENV"
+          echo "STATIC_WEB_APP_BASE_URL=$static_web_app_base_url" >> "$GITHUB_ENV"
 
       - name: Deploy application artifact
         shell: bash
         run: |
           set -euo pipefail
-          az functionapp deployment source config-zip \
+          if ! az functionapp deployment source config-zip \
             --resource-group "$RESOURCE_GROUP" \
             --name "$FUNCTION_APP_NAME" \
-            --src bundle/function-app.zip
+            --src bundle/function-app.zip; then
+            echo "::error::Function App package deployment failed. Infrastructure was already applied; the Mini App site was not published. Re-run the deployment deliberately. No rollback is attempted."
+            exit 1
+          fi
+
+      - name: Verify Static Web Apps deployment token is present
+        shell: bash
+        env:
+          ENVIRONMENT_NAME: ${{ inputs.environment }}
+          SWA_CLI_DEPLOYMENT_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SWA_CLI_DEPLOYMENT_TOKEN:-}" ]]; then
+            echo "::error::Secret AZURE_STATIC_WEB_APPS_API_TOKEN is missing or empty on the '${ENVIRONMENT_NAME}' environment. Create it from the Static Web App's deployment token before deploying."
+            exit 1
+          fi
+
+      - name: Set up Node.js for publication
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Publish Mini App to Azure Static Web Apps
+        shell: bash
+        env:
+          SWA_CLI_DEPLOYMENT_TOKEN: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Static Web Apps CLI pinned to the exact published version 2.0.10.
+          # The prebuilt bundle payload is published as-is: no build, no
+          # checkout, and no token on the command line.
+          if ! npx --yes @azure/static-web-apps-cli@2.0.10 deploy bundle/mini-app --env production; then
+            echo "::error::Static Web Apps publication failed. Infrastructure and the Function App package were already applied; the site was not published. Re-run the deployment deliberately. No rollback is attempted."
+            exit 1
+          fi
+
+      - name: Verify published Mini App endpoint
+        shell: bash
+        env:
+          BUNDLE_DIR: bundle
+          PINNED_RUN_ID: ${{ needs.resolve-ci-run.outputs.run_id }}
+          PINNED_RUN_ATTEMPT: ${{ needs.resolve-ci-run.outputs.run_attempt }}
+          PINNED_HEAD_SHA: ${{ needs.resolve-ci-run.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+
+          BUNDLE_DIR="${BUNDLE_DIR:-bundle}"
+          base_url="${STATIC_WEB_APP_BASE_URL%/}"
+          response_body="$(mktemp)"
+          trap 'rm -f "$response_body"' EXIT
+
+          attempt=1
+          status=""
+          while [[ "$attempt" -le 10 ]]; do
+            # curl writes its own '000' status on a transport failure, so the
+            # status is captured with '|| true' and normalised to the last
+            # three characters instead of appending a second fallback value.
+            status="$(curl --silent --show-error --location --max-time 30 \
+              --output "$response_body" --write-out '%{http_code}' "${base_url}/" || true)"
+            status="${status: -3}"
+            if [[ "$status" == "200" ]]; then
+              break
+            fi
+            attempt=$((attempt + 1))
+            if [[ "$attempt" -le 10 ]]; then
+              sleep 15
+            fi
+          done
+          if [[ -z "$status" ]]; then
+            status="000"
+          fi
+          if [[ "$status" != "200" ]]; then
+            echo "::error::The published Mini App entry page at ${base_url}/ did not return HTTP 200 after 10 attempts (last status ${status}). Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
+            exit 1
+          fi
+          if ! grep -q '<title>Telegram Mini App — Hello World</title>' "$response_body" ||
+            ! grep -q '<h1>Hello World</h1>' "$response_body"; then
+            echo "::error::The published Mini App entry page at ${base_url}/ does not serve this version's expected markers. Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
+            exit 1
+          fi
+
+          asset_file=""
+          if [[ -d "${BUNDLE_DIR}/mini-app/assets" ]]; then
+            # 'sed -n 1p' consumes the whole stream, so the pipeline cannot end
+            # with SIGPIPE (exit 141) under 'set -o pipefail'.
+            asset_file="$(find "${BUNDLE_DIR}/mini-app/assets" -type f | LC_ALL=C sort | sed -n '1p')"
+          fi
+          if [[ -z "$asset_file" ]]; then
+            asset_file="$(find "${BUNDLE_DIR}/mini-app" -type f ! -name index.html | LC_ALL=C sort | sed -n '1p')"
+          fi
+          if [[ -z "$asset_file" ]]; then
+            echo "::error::The published bundle payload contains no local asset file to verify. Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
+            exit 1
+          fi
+          asset_path="${asset_file#${BUNDLE_DIR}/mini-app/}"
+
+          asset_status="$(curl --silent --show-error --location --max-time 30 \
+            --output "$response_body" --write-out '%{http_code}' "${base_url}/${asset_path}" || true)"
+          asset_status="${asset_status: -3}"
+          if [[ -z "$asset_status" ]]; then
+            asset_status="000"
+          fi
+          if [[ "$asset_status" != "200" || ! -s "$response_body" ]]; then
+            echo "::error::The published Mini App asset ${base_url}/${asset_path} did not return a non-empty HTTP 200 response (status ${asset_status}). Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
+            exit 1
+          fi
+
+          {
+            echo "Static Web App: ${STATIC_WEB_APP_NAME}"
+            echo "Static Web App URL: ${base_url}"
+            echo "Verified asset path: ${asset_path}"
+            echo "Pinned CI run: ${PINNED_RUN_ID} (attempt ${PINNED_RUN_ATTEMPT})"
+            echo "Commit: ${PINNED_HEAD_SHA}"
+          } >> "$GITHUB_STEP_SUMMARY"

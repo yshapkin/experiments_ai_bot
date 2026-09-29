@@ -6,17 +6,23 @@
   "scripts": {
     "test": "node --import tsx --test test/**/*.test.ts",
     "dev": "tsx src/index.ts",
-    "build": "tsc -p tsconfig.build.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "mini-app:typecheck": "tsc -p mini-app/tsconfig.json --noEmit",
-    "mini-app:build": "vite build mini-app",
+    "bot:build": "tsc -p tsconfig.build.json",
+    "bot:typecheck": "tsc -p tsconfig.json --noEmit",
+    "mini-app:dev": "vite src/mini-app",
+    "mini-app:typecheck": "tsc -p src/mini-app/tsconfig.json",
+    "mini-app:build": "vite build src/mini-app --outDir ../../mini-app/dist --emptyOutDir",
+    "mini-app:preview": "vite preview src/mini-app --outDir ../../mini-app/dist",
+    "test:mini-app:initialization": "node --import tsx --test test/mini-app-initialization.test.ts",
+    "test:mini-app:build": "node --import tsx --test test/mini-app-build.test.ts",
+    "build": "npm run bot:build && npm run mini-app:build",
+    "typecheck": "npm run bot:typecheck && npm run mini-app:typecheck",
     "start": "node dist/index.js"
   },
   "license": "MIT",
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=22 <23"
+    "node": ">=24 <25"
   },
   "dependencies": {
     "@azure/functions": "4.16.5",
@@ -25,9 +31,9 @@
     "grammy": "1.46.0"
   },
   "devDependencies": {
-    "@types/node": "22.20.4",
+    "@types/node": "24.19.0",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
-    "vite": "6.4.1"
+    "vite": "8.3.1"
   }
 }

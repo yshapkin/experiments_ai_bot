@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 
-import { initializeMiniApp } from "../mini-app/src/app.js";
+import { initializeMiniApp } from "../src/mini-app/app.js";
 import { FakeMiniAppView } from "./helpers/fake-mini-app-view.js";
 
 const FALLBACK = "Open this app in Telegram";

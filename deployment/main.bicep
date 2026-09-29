@@ -13,6 +13,9 @@ param environmentName string
 @description('Azure region for the resources.')
 param location string = resourceGroup().location
 
+@description('Azure region for the Static Web App.')
+param staticWebAppLocation string
+
 @description('Additional tags to apply to resources. Required tags take precedence.')
 param tags object = {}
 
@@ -46,6 +49,7 @@ var functionAppName = 'func-${resourceNameToken}'
 var keyVaultName = 'kv-${resourceNameToken}'
 var logAnalyticsWorkspaceName = 'log-${resourceNameToken}'
 var applicationInsightsName = 'appi-${resourceNameToken}'
+var staticWebAppName = 'stapp-${resourceNameToken}'
 var deploymentContainerName = 'function-releases'
 
 var storageBlobDataOwnerRoleDefinitionId = subscriptionResourceId(
@@ -170,6 +174,17 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
+resource staticWebApp 'Microsoft.Web/staticSites@2023-12-01' = {
+  name: staticWebAppName
+  location: staticWebAppLocation
+  tags: resourceTags
+  sku: {
+    name: 'Free'
+    tier: 'Free'
+  }
+  properties: {}
+}
+
 resource storageBlobDataOwnerAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   scope: storageAccount
   name: guid(storageAccount.id, managedIdentity.id, storageBlobDataOwnerRoleDefinitionId)
@@ -270,7 +285,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       }
       runtime: {
         name: 'node'
-        version: '22'
+        version: '24'
       }
       scaleAndConcurrency: {
         instanceMemoryMB: 2048
@@ -319,6 +334,15 @@ output applicationInsightsResourceId string = applicationInsights.id
 @description('Application Insights name.')
 output applicationInsightsName string = applicationInsights.name
 
+@description('Static Web App name.')
+output staticWebAppName string = staticWebApp.name
+
+@description('Static Web App default hostname.')
+output staticWebAppDefaultHostname string = staticWebApp.properties.defaultHostname
+
+@description('Static Web App HTTPS base URL.')
+output staticWebAppBaseUrl string = 'https://${staticWebApp.properties.defaultHostname}'
+
 @description('Log Analytics workspace resource ID.')
 output logAnalyticsWorkspaceResourceId string = logAnalyticsWorkspace.id
 
@@ -330,4 +354,3 @@ output managedIdentityClientId string = managedIdentity.properties.clientId
 
 @description('User-assigned managed identity principal ID.')
 output managedIdentityPrincipalId string = managedIdentity.properties.principalId
-

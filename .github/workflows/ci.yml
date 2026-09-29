@@ -34,7 +34,7 @@ jobs:
           trap 'rm -f "$formatted_file" "$lint_results" "$lint_diagnostics"' EXIT
 
           for file in deployment/main.bicep deployment/main.bicepparam; do
-            az bicep format --file "$file" --stdout > "$formatted_file"
+            az bicep format --file "$file" --outfile "$formatted_file"
             if ! diff -u "$file" "$formatted_file"; then
               echo "::error file=$file::Run 'az bicep format --file $file' to fix formatting."
               exit 1
@@ -60,7 +60,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
 
       - name: Install dependencies
@@ -99,13 +99,136 @@ jobs:
           az bicep build-params \
             --file deployment/main.bicepparam \
             --outfile "${bundle_directory}/infrastructure/main.parameters.json"
+
+          # '-L' dereferences symbolic links, so link targets are materialised
+          # as regular files and the bundle payload contains no symbolic link.
+          # The 'dist/.' source form copies the contents of the built site, not
+          # the 'dist' directory itself.
+          mkdir -p "${bundle_directory}/mini-app"
+          cp -RL mini-app/dist/. "${bundle_directory}/mini-app/"
+
+          echo "name=$bundle_name" >> "$GITHUB_OUTPUT"
+          echo "directory=$bundle_directory" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Mini App static output
+        shell: bash
+        env:
+          MINI_APP_DIST: mini-app/dist
+          BUNDLE_MINI_APP_DIST: ${{ steps.bundle.outputs.directory }}
+        run: |
+          set -euo pipefail
+
+          # Bash 3.2 compatible constructs only: no mapfile/readarray, no
+          # 'declare -A', and no '${var,,}'/'${var^^}' expansions. The release
+          # gate tests extract this exact script and run it with the local
+          # bash, which is 3.2 on macOS.
+
+          validate_root() {
+            root="${1%/}"
+            entry="${root}/index.html"
+
+            if [ ! -f "$entry" ] || [ ! -s "$entry" ]; then
+              echo "::error file=${entry}::Mini App payload root '${root}' has no non-empty index.html file."
+              return 1
+            fi
+
+            link="$(find "$root" -type l -print -quit)"
+            if [ -n "$link" ]; then
+              echo "::error file=${link}::Mini App payload root '${root}' contains symbolic link '${link}'."
+              return 1
+            fi
+
+            # Each extracted value is prefixed with a ':' marker so that an
+            # empty attribute value ('href=""') survives command substitution
+            # as a real list line instead of being dropped as a trailing blank
+            # line. The marker is removed again inside the loop.
+            references="$(grep -o -E '(href|src)="[^"]*"' "$entry" | sed -e 's/^[^"]*"//' -e 's/"$//' -e 's/^/:/' || true)"
+
+            # A here-string over an empty string still yields one empty line, so
+            # the loop is entered only when at least one reference was
+            # collected. An attribute whose value is empty is a real reference
+            # and is rejected below, not skipped.
+            if [ -n "$references" ]; then
+              while IFS= read -r marked_reference; do
+                reference="${marked_reference#:}"
+
+                # External references are accepted without any further check and
+                # are never fetched.
+                case "$reference" in
+                  //*)
+                    continue
+                    ;;
+                esac
+                if printf '%s' "$reference" | grep -q -E '^[A-Za-z][A-Za-z0-9+.-]*:'; then
+                  continue
+                fi
+
+                local_path="${reference%%[?#]*}"
+                decoded="$(printf '%s' "$local_path" | sed -e 's/\\/\\\\/g' -e 's/%\([0-9A-Fa-f][0-9A-Fa-f]\)/\\x\1/g')"
+                decoded="$(printf '%b' "$decoded")"
+                while [ "${decoded#/}" != "$decoded" ]; do
+                  decoded="${decoded#/}"
+                done
+                if [ -z "$decoded" ]; then
+                  echo "::error file=${entry}::Mini App payload root '${root}' has an empty local reference '${reference}'."
+                  return 1
+                fi
+                case "/${decoded}/" in
+                  */../*)
+                    echo "::error file=${entry}::Mini App payload root '${root}' has local reference '${reference}' that escapes the payload directory."
+                    return 1
+                    ;;
+                esac
+
+                asset="${root}/${decoded}"
+                if [ ! -f "$asset" ] || [ ! -s "$asset" ]; then
+                  echo "::error file=${asset}::Mini App payload root '${root}' references missing or empty local asset '${reference}'."
+                  return 1
+                fi
+              done <<< "$references"
+            fi
+
+            echo "Validated Mini App payload root '${root}'."
+            return 0
+          }
+
+          root_list="${MINI_APP_DIST:-mini-app/dist}"
+          if [ -n "${BUNDLE_MINI_APP_DIST:-}" ]; then
+            root_list="${root_list}
+          ${BUNDLE_MINI_APP_DIST%/}/mini-app"
+          fi
+
+          while IFS= read -r root; do
+            if [ -z "$root" ]; then
+              continue
+            fi
+            if ! validate_root "$root"; then
+              exit 1
+            fi
+          done <<< "$root_list"
+
+      - name: Write bundle metadata
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: bash
+        env:
+          BUNDLE_DIR: ${{ steps.bundle.outputs.directory }}
+        run: |
+          set -euo pipefail
+
+          # Bash 3.2 compatible constructs only: no mapfile/readarray, no
+          # 'declare -A', and no '${var,,}'/'${var^^}' expansions. The release
+          # gate tests extract this exact script and run it with the local
+          # bash, which is 3.2 on macOS.
+
+          BUNDLE_DIR="${BUNDLE_DIR:-bundle}"
+
           jq -n \
             --arg repository "$GITHUB_REPOSITORY" \
             --arg commitSha "$GITHUB_SHA" \
             --arg runId "$GITHUB_RUN_ID" \
             --arg runAttempt "$GITHUB_RUN_ATTEMPT" \
             '{
-              bundleVersion: 1,
+              bundleVersion: 2,
               repository: $repository,
               workflow: "ci.yml",
               event: "push",
@@ -113,10 +236,7 @@ jobs:
               commitSha: $commitSha,
               runId: $runId,
               runAttempt: $runAttempt
-            }' > "${bundle_directory}/metadata.json"
-
-          echo "name=$bundle_name" >> "$GITHUB_OUTPUT"
-          echo "directory=$bundle_directory" >> "$GITHUB_OUTPUT"
+            }' > "${BUNDLE_DIR}/metadata.json"
 
       - name: Upload deployment bundle
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'

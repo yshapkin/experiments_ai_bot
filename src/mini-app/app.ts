@@ -1,3 +1,4 @@
+import { createTelegramReadyNotifier } from "./telegram.js";
 import { normalizeUserInfo } from "./user-info.js";
 import type { MiniAppView } from "./view.js";
 import { renderFallback, renderProfile } from "./view.js";
@@ -31,4 +32,20 @@ export function initializeMiniApp(
       // Rendering is complete and remains usable if Telegram readiness fails.
     }
   }
+}
+
+export interface MiniAppInitialization {
+  readonly host: unknown;
+  readonly initializeScreen: () => void;
+}
+
+export function createMiniAppInitializer(): (
+  initialization: MiniAppInitialization,
+) => void {
+  const notifyTelegramReady = createTelegramReadyNotifier();
+
+  return ({ host, initializeScreen }: MiniAppInitialization): void => {
+    initializeScreen();
+    notifyTelegramReady(host);
+  };
 }

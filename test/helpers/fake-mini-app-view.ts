@@ -1,7 +1,7 @@
 import type {
   MiniAppView,
   ViewElementName,
-} from "../../mini-app/src/view.js";
+} from "../../src/mini-app/view.js";
 
 export interface FakeElement {
   readonly name: ViewElementName;

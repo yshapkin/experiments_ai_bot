@@ -1,5 +1,4 @@
 import { initializeMiniApp } from "./app.js";
-import "./styles.css";
 import { createBrowserView } from "./view.js";
 
 declare global {
