@@ -1,5 +1,6 @@
 import { initializeMiniApp } from "./app.js";
 import { createBrowserView } from "./view.js";
+import { copy } from "./copy.js";
 
 declare global {
   interface Window {
@@ -19,7 +20,8 @@ if (root === null) {
   throw new Error("Mini App root element is missing");
 }
 
-initializeMiniApp(
+document.title = copy.en.title;
+void initializeMiniApp(
   telegramWebAppCandidate(window.Telegram),
   createBrowserView(root),
 );

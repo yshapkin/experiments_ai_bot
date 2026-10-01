@@ -250,9 +250,10 @@ jobs:
             --query properties.outputs \
             --output json)"
           function_app_name="$(jq -r '.functionAppName.value // empty' <<< "$outputs_json")"
+          function_app_base_url="$(jq -r '.functionAppBaseUrl.value // empty' <<< "$outputs_json")"
           static_web_app_name="$(jq -r '.staticWebAppName.value // empty' <<< "$outputs_json")"
           static_web_app_base_url="$(jq -r '.staticWebAppBaseUrl.value // empty' <<< "$outputs_json")"
-          if [[ -z "$function_app_name" ]]; then
+          if [[ -z "$function_app_name" || -z "$function_app_base_url" ]]; then
             echo "::error::Infrastructure deployment did not return a Function App name. Infrastructure changes were already applied; the Function App package and the Mini App site were not deployed. No rollback is attempted."
             exit 1
           fi
@@ -261,6 +262,7 @@ jobs:
             exit 1
           fi
           echo "FUNCTION_APP_NAME=$function_app_name" >> "$GITHUB_ENV"
+          echo "FUNCTION_APP_BASE_URL=$function_app_base_url" >> "$GITHUB_ENV"
           echo "STATIC_WEB_APP_NAME=$static_web_app_name" >> "$GITHUB_ENV"
           echo "STATIC_WEB_APP_BASE_URL=$static_web_app_base_url" >> "$GITHUB_ENV"
 
@@ -292,6 +294,28 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
+
+      - name: Generate non-secret runtime overlay
+        shell: bash
+        env:
+          BUNDLE_DIR: bundle
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR="${BUNDLE_DIR:-bundle}"
+          if [[ ! "$FUNCTION_APP_BASE_URL" =~ ^https://[a-zA-Z0-9.-]+$ ]] ||
+            [[ "$FUNCTION_APP_BASE_URL" != https://*.azurewebsites.net ]]; then
+            echo "::error::Invalid Function App HTTPS base URL in deployment outputs."
+            exit 1
+          fi
+          mkdir -p "${BUNDLE_DIR}/runtime"
+          jq -nc --arg url "$FUNCTION_APP_BASE_URL" '{functionBaseUrl:$url}' > "${BUNDLE_DIR}/runtime/config.json"
+          if ! jq -e --arg url "$FUNCTION_APP_BASE_URL" \
+            'type == "object" and (keys == ["functionBaseUrl"]) and .functionBaseUrl == $url' \
+            "${BUNDLE_DIR}/runtime/config.json" > /dev/null; then
+            echo "::error::Invalid runtime overlay."
+            exit 1
+          fi
+          cp "${BUNDLE_DIR}/runtime/config.json" "${BUNDLE_DIR}/mini-app/config.json"
 
       - name: Publish Mini App to Azure Static Web Apps
         shell: bash
@@ -376,6 +400,39 @@ jobs:
           if [[ "$asset_status" != "200" ]] ||
             ! cmp -s "$asset_file" "$response_body"; then
             echo "::error::The published Mini App asset ${base_url}/${asset_path} did not return HTTP 200 with the pinned CI bundle's content (status ${asset_status}). Infrastructure, the Function App package, and the site were already applied. No rollback is attempted."
+            exit 1
+          fi
+
+          # The generated overlay is not part of the pinned CI payload. Check
+          # its schema and the exact published bytes, not just HTTP success.
+          if ! jq -e --arg url "$FUNCTION_APP_BASE_URL" \
+            'type == "object" and (keys == ["functionBaseUrl"]) and .functionBaseUrl == $url' \
+            "${BUNDLE_DIR}/runtime/config.json" > /dev/null; then
+            echo "::error::Generated runtime overlay is invalid."
+            exit 1
+          fi
+          attempt=1
+          config_status=""
+          while [[ "$attempt" -le 10 ]]; do
+            config_status="$(curl --silent --show-error --location --max-time 30 \
+              --output "$response_body" --write-out '%{http_code}' "${base_url}/config.json" || true)"
+            config_status="${config_status: -3}"
+            if [[ "$config_status" == "200" ]] &&
+              jq -e --arg url "$FUNCTION_APP_BASE_URL" \
+                'type == "object" and (keys == ["functionBaseUrl"]) and .functionBaseUrl == $url' \
+                "$response_body" > /dev/null 2>&1 &&
+              cmp -s "${BUNDLE_DIR}/runtime/config.json" "$response_body"; then
+              break
+            fi
+            attempt=$((attempt + 1))
+            if [[ "$attempt" -le 10 ]]; then sleep 15; fi
+          done
+          if [[ "$config_status" != "200" ]] ||
+            ! jq -e --arg url "$FUNCTION_APP_BASE_URL" \
+              'type == "object" and (keys == ["functionBaseUrl"]) and .functionBaseUrl == $url' \
+              "$response_body" > /dev/null 2>&1 ||
+            ! cmp -s "${BUNDLE_DIR}/runtime/config.json" "$response_body"; then
+            echo "::error::Published /config.json does not match the generated runtime overlay."
             exit 1
           fi
 

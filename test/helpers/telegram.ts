@@ -3,6 +3,7 @@ import type { Context } from "grammy";
 import type { Update, UserFromGetMe } from "grammy/types";
 
 import { createBot } from "../../src/bot.js";
+import type { UserRepository, UserRow } from "../../src/users/repository.js";
 
 const user = {
   id: 100,
@@ -40,13 +41,37 @@ export interface ApiCall {
 export interface BotHarness {
   bot: Bot<Context>;
   calls: ApiCall[];
+  row: UserRow | null;
+  fail: boolean;
+  registrations: number;
 }
 
 export function createBotHarness(): BotHarness {
   const calls: ApiCall[] = [];
+  const state: BotHarness = {
+    bot: undefined as unknown as Bot<Context>, calls, row: null, fail: false, registrations: 0,
+  };
+  const users: UserRepository = {
+    async register(id) {
+      state.registrations++;
+      if (state.fail) throw new Error("offline table failure");
+      state.row ??= {
+        partitionKey: "user", rowKey: String(id), telegramUserId: String(id),
+        createdAt: "2026-01-01T00:00:00.000Z", isActive: false, isAdmin: false,
+      };
+      return state.row;
+    },
+    async find() {
+      if (state.fail) throw new Error("offline table failure");
+      return state.row;
+    },
+  };
   const bot = createBot("123456:test-only-token", {
     botConfig: { botInfo },
+    users,
+    miniAppUrl: "https://example.test/mini-app",
   });
+  state.bot = bot;
 
   bot.api.config.use(async (_previous, method, payload) => {
     calls.push({
@@ -69,7 +94,7 @@ export function createBotHarness(): BotHarness {
     return { ok: true, result } as never;
   });
 
-  return { bot, calls };
+  return state;
 }
 
 export function privateTextUpdate(
