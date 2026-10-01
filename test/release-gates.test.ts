@@ -267,6 +267,8 @@ function runPublishedEndpoint(
   root: string,
   entryResponse: "matching" | "stale" | "stale-once",
   assetResponse: "matching" | "stale" = "matching",
+  configResponse: "matching" | "missing" | "html" | "stale" | "malformed" | "wrong-schema" | "different" = "matching",
+  generatedConfig = '{"functionBaseUrl":"https://func.azurewebsites.net"}\n',
 ): ScriptResult {
   createDeployBundle(root);
   writeFixtureFile(
@@ -276,6 +278,11 @@ function runPublishedEndpoint(
   );
   writeFixtureFile(root, "stale-index.html", "<h1>Old release</h1>\n");
   writeFixtureFile(root, "stale-asset.css", "body{color:red}\n");
+  writeFixtureFile(root, "bundle/runtime/config.json", generatedConfig);
+  writeFixtureFile(root, "stale-config.json", '{"functionBaseUrl":"https://other.azurewebsites.net"}\n');
+  writeFixtureFile(root, "malformed-config.json", "{invalid json\n");
+  writeFixtureFile(root, "wrong-schema.json", '{"functionBaseUrl":"https://func.azurewebsites.net","token":"not-allowed"}\n');
+  writeFixtureFile(root, "different-config.json", '{ "functionBaseUrl": "https://func.azurewebsites.net" }\n');
 
   const bin = resolve(root, "bin");
   writeFixtureFile(root, "bin/curl", [
@@ -283,7 +290,17 @@ function runPublishedEndpoint(
     'while [[ "$#" -gt 1 ]]; do',
     '  if [[ "$1" == "--output" ]]; then output="$2"; shift 2; else shift; fi',
     "done",
-    'if [[ "$1" == */assets/* ]]; then',
+    'if [[ "$1" == */config.json ]]; then',
+    '  case "$MOCK_CONFIG_RESPONSE" in',
+    '    missing) printf "404"; exit 0;;',
+    '    html) cp "$MOCK_BUNDLE_ENTRY" "$output";;',
+    '    stale) cp "$MOCK_STALE_CONFIG" "$output";;',
+    '    malformed) cp "$MOCK_MALFORMED_CONFIG" "$output";;',
+    '    wrong-schema) cp "$MOCK_WRONG_SCHEMA_CONFIG" "$output";;',
+    '    different) cp "$MOCK_DIFFERENT_CONFIG" "$output";;',
+    '    *) cp "$MOCK_BUNDLE_CONFIG" "$output";;',
+    '  esac',
+    'elif [[ "$1" == */assets/* ]]; then',
     '  if [[ "$MOCK_ASSET_RESPONSE" == "stale" ]]; then',
     '    cp "$MOCK_STALE_ASSET" "$output"',
     "  else",
@@ -314,6 +331,7 @@ function runPublishedEndpoint(
       BUNDLE_DIR: "bundle",
       STATIC_WEB_APP_BASE_URL: "https://site.example",
       STATIC_WEB_APP_NAME: "mini-app",
+      FUNCTION_APP_BASE_URL: "https://func.azurewebsites.net",
       PINNED_RUN_ID: expectedRunId,
       PINNED_RUN_ATTEMPT: expectedRunAttempt,
       PINNED_HEAD_SHA: expectedCommitSha,
@@ -321,6 +339,12 @@ function runPublishedEndpoint(
       PATH: `${bin}:${process.env.PATH ?? ""}`,
       MOCK_ENTRY_RESPONSE: entryResponse,
       MOCK_ASSET_RESPONSE: assetResponse,
+      MOCK_CONFIG_RESPONSE: configResponse,
+      MOCK_BUNDLE_CONFIG: resolve(root, "bundle/runtime/config.json"),
+      MOCK_STALE_CONFIG: resolve(root, "stale-config.json"),
+      MOCK_MALFORMED_CONFIG: resolve(root, "malformed-config.json"),
+      MOCK_WRONG_SCHEMA_CONFIG: resolve(root, "wrong-schema.json"),
+      MOCK_DIFFERENT_CONFIG: resolve(root, "different-config.json"),
       MOCK_BUNDLE_ENTRY: resolve(root, "bundle/mini-app/index.html"),
       MOCK_BUNDLE_ASSET: resolve(root, "bundle/mini-app/assets/app.css"),
       MOCK_STALE_ENTRY: resolve(root, "stale-index.html"),
@@ -615,6 +639,17 @@ describe("release gate scripts", () => {
       assert.equal(readFileSync(resolve(root, "request-count"), "utf8").trim(), "1");
     });
 
+    for (const overlay of ["{invalid", '{"functionBaseUrl":"https://other.azurewebsites.net"}',
+      '{"functionBaseUrl":"https://func.azurewebsites.net","token":"secret"}']) {
+      it(`rejects invalid generated overlay ${overlay.slice(0, 35)} before fetching published config`, () => {
+        const root = createTemporaryRoot();
+        const result = runPublishedEndpoint(root, "matching", "matching", "matching", overlay);
+        assert.equal(result.status, 1, result.output);
+        assert.match(result.output, /Generated runtime overlay is invalid/u);
+        assert.equal(readFileSync(resolve(root, "request-count"), "utf8").trim(), "1");
+      });
+    }
+
     it("retries a stale HTTP 200 page until it matches the pinned bundle", () => {
       const root = createTemporaryRoot();
 
@@ -643,6 +678,16 @@ describe("release gate scripts", () => {
       assert.match(result.output, /did not return HTTP 200 with the pinned CI bundle's content/u);
       assert.equal(readFileSync(resolve(root, "summary"), "utf8"), "");
     });
+
+    for (const mode of ["missing", "html", "stale", "malformed", "wrong-schema", "different"] as const) {
+      it(`rejects ${mode} published runtime config even when pinned assets match`, () => {
+        const root = createTemporaryRoot();
+        const result = runPublishedEndpoint(root, "matching", "matching", mode);
+        assert.equal(result.status, 1, result.output);
+        assert.match(result.output, /Published \/config\.json does not match/u);
+        assert.equal(readFileSync(resolve(root, "request-count"), "utf8").trim(), "1");
+      });
+    }
   });
 
   describe("bundle metadata producer and consumer contract", () => {

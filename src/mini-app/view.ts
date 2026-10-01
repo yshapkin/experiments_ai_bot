@@ -1,4 +1,5 @@
 import type { UserInfo } from "./user-info.js";
+import { copy } from "./copy.js";
 
 export type ViewElementName =
   | "article"
@@ -26,7 +27,7 @@ export interface MiniAppView {
   appendToRoot(element: unknown): void;
 }
 
-const TELEGRAM_FALLBACK = "Open this app in Telegram";
+const en = copy.en;
 
 function element(
   view: MiniAppView,
@@ -64,22 +65,26 @@ function appendDetail(
 }
 
 function createNeutralAvatar(view: MiniAppView, hidden: boolean): unknown {
-  const avatar = textElement(view, "span", "👤", "profile-card__avatar-fallback");
+  const avatar = textElement(view, "span", en.avatarFallback, "profile-card__avatar-fallback");
   view.setAttribute(avatar, "role", "img");
-  view.setAttribute(avatar, "aria-label", "Profile photo unavailable");
+  view.setAttribute(avatar, "aria-label", en.avatarUnavailable);
   view.setHidden(avatar, hidden);
   return avatar;
 }
 
 export function renderFallback(view: MiniAppView): void {
+  renderStatus(view, en.noTelegram);
+}
+
+export function renderStatus(view: MiniAppView, message: string): void {
   view.clear();
-  const message = textElement(
+  const paragraph = textElement(
     view,
     "p",
-    TELEGRAM_FALLBACK,
+    message,
     "telegram-fallback",
   );
-  view.appendToRoot(message);
+  view.appendToRoot(paragraph);
 }
 
 export function renderProfile(view: MiniAppView, user: UserInfo): void {
@@ -94,7 +99,7 @@ export function renderProfile(view: MiniAppView, user: UserInfo): void {
 
   if (user.photoUrl !== null) {
     const image = element(view, "img", "profile-card__image");
-    view.setImageAlternative(image, "Telegram profile photo");
+    view.setImageAlternative(image, en.avatarAlt);
     view.setImageReferrerPolicy(image, "no-referrer");
     view.onImageError(image, () => {
       view.setHidden(image, true);
@@ -109,19 +114,19 @@ export function renderProfile(view: MiniAppView, user: UserInfo): void {
   const heading = textElement(
     view,
     "h1",
-    "Telegram profile",
+    en.profileHeading,
     "profile-card__heading",
   );
   view.setAttribute(heading, "id", "profile-heading");
   view.append(card, heading);
 
   const details = element(view, "dl", "profile-card__details");
-  appendDetail(view, details, "User ID", String(user.id));
+  appendDetail(view, details, en.userId, String(user.id));
   appendDetail(
     view,
     details,
-    "Username",
-    user.username ?? "Not available",
+    en.username,
+    user.username ?? en.missingValue,
   );
   view.append(card, details);
   view.appendToRoot(card);

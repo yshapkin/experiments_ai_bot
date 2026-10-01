@@ -4,7 +4,8 @@ import type { HttpRequest, HttpResponseInit } from "@azure/functions";
 import { webhookCallback } from "grammy";
 
 import { createBot } from "./bot.js";
-import { loadWebhookConfig } from "./config.js";
+import { loadWebhookConfig, loadRuntimeConfig } from "./config.js";
+import { connectUserRepository } from "./users/repository.js";
 import {
   createLogger,
   type Logger,
@@ -20,7 +21,10 @@ const DEFAULT_MAX_REQUEST_BODY_BYTES = 256 * 1024;
 
 const logger = createLogger();
 const config = loadWebhookConfig();
-const bot = createBot(config.telegramBotToken, { logger });
+const runtime = loadRuntimeConfig();
+const bot = createBot(config.telegramBotToken, { logger,
+  users: connectUserRepository(runtime.tableEndpoint, runtime.managedIdentityClientId),
+  miniAppUrl: runtime.miniAppUrl });
 const handleWebhook = webhookCallback(bot, "azure-v4");
 
 logger.info("webhook_runtime_ready");

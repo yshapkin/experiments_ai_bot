@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { after, beforeEach, describe, it, mock } from "node:test";
 
 import { app } from "@azure/functions";
+import { TableClient } from "@azure/data-tables";
 
 import type {
   Logger,
@@ -13,6 +14,8 @@ import { privateTextUpdate } from "./helpers/telegram.js";
 
 const originalBotToken = process.env.TELEGRAM_BOT_TOKEN;
 const originalWebhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET;
+const originalTableEndpoint = process.env.USER_TABLE_ENDPOINT;
+const originalMiniAppUrl = process.env.MINI_APP_URL;
 const webhookSecret = "test-webhook-secret";
 const require = createRequire(import.meta.url);
 const nodeFetch = require("node-fetch") as { default: typeof fetch };
@@ -20,6 +23,8 @@ const originalNodeFetch = nodeFetch.default;
 
 process.env.TELEGRAM_BOT_TOKEN = "123456:test-only-token";
 process.env.TELEGRAM_WEBHOOK_SECRET = webhookSecret;
+process.env.USER_TABLE_ENDPOINT = "https://offline.table.core.windows.net";
+process.env.MINI_APP_URL = "https://offline.example.test/";
 
 let webhookModuleNonce = 0;
 
@@ -31,6 +36,10 @@ const noopLogger: Logger = {
 };
 
 after(() => {
+  if (originalTableEndpoint === undefined) delete process.env.USER_TABLE_ENDPOINT;
+  else process.env.USER_TABLE_ENDPOINT = originalTableEndpoint;
+  if (originalMiniAppUrl === undefined) delete process.env.MINI_APP_URL;
+  else process.env.MINI_APP_URL = originalMiniAppUrl;
   if (originalBotToken === undefined) {
     delete process.env.TELEGRAM_BOT_TOKEN;
   } else {
@@ -145,12 +154,17 @@ describe("handleTelegramWebhook", () => {
     );
   });
 
-  it("processes a valid Telegram update with the actual bot handler", async () => {
+  it("registers a valid /start update with an isolated fake Table client", async () => {
     const fetchCalls: Array<{ url: string; body: string }> = [];
     installTelegramApiStub(fetchCalls);
+    const created: unknown[] = [];
+    mock.method(TableClient.prototype, "createEntity", async (row: unknown) => {
+      created.push(row);
+      return {} as never;
+    });
 
     const handleTelegramWebhook = await loadWebhookHandler();
-    const update = privateTextUpdate("echo this");
+    const update = privateTextUpdate("/start");
     const response = await handleTelegramWebhook(
       {
         headers: {
@@ -179,7 +193,13 @@ describe("handleTelegramWebhook", () => {
       fetchCalls[1]?.url ?? "",
       /https:\/\/api\.telegram\.org\/bot123456:test-only-token\/sendMessage$/,
     );
-    assert.equal(JSON.parse(fetchCalls[1]?.body ?? "{}").text, "echo this");
+    assert.match(JSON.parse(fetchCalls[1]?.body ?? "{}").text, /pending/i);
+    assert.equal(JSON.parse(fetchCalls[1]?.body ?? "{}").reply_markup, undefined);
+    assert.deepEqual(created, [{
+      partitionKey: "user", rowKey: "100", telegramUserId: "100",
+      createdAt: (created[0] as { createdAt: string }).createdAt,
+      isActive: false, isAdmin: false,
+    }]);
   });
 
   it("rejects a missing secret token before reading the request body", async () => {

@@ -56,6 +56,10 @@ var storageBlobDataOwnerRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
 )
+var storageTableDataContributorRoleDefinitionId = subscriptionResourceId(
+  'Microsoft.Authorization/roleDefinitions',
+  '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+)
 var keyVaultSecretsUserRoleDefinitionId = subscriptionResourceId(
   'Microsoft.Authorization/roleDefinitions',
   '4633458b-17de-408a-b874-0445c86b69e6'
@@ -98,6 +102,26 @@ resource deploymentContainer 'Microsoft.Storage/storageAccounts/blobServices/con
   name: deploymentContainerName
   properties: {
     publicAccess: 'None'
+  }
+}
+
+resource tableService 'Microsoft.Storage/storageAccounts/tableServices@2023-05-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+resource usersTable 'Microsoft.Storage/storageAccounts/tableServices/tables@2023-05-01' = {
+  parent: tableService
+  name: 'users'
+}
+
+resource storageTableContributorAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: storageAccount
+  name: guid(storageAccount.id, managedIdentity.id, storageTableDataContributorRoleDefinitionId)
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: storageTableDataContributorRoleDefinitionId
   }
 }
 
@@ -270,6 +294,18 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           name: 'TELEGRAM_WEBHOOK_SECRET'
           value: '@Microsoft.KeyVault(SecretUri=${keyVault.properties.vaultUri}secrets/${telegramWebhookSecretName})'
         }
+        {
+          name: 'USER_TABLE_ENDPOINT'
+          value: storageAccount.properties.primaryEndpoints.table
+        }
+        {
+          name: 'AZURE_CLIENT_ID'
+          value: managedIdentity.properties.clientId
+        }
+        {
+          name: 'MINI_APP_URL'
+          value: 'https://${staticWebApp.properties.defaultHostname}'
+        }
       ]
     }
     functionAppConfig: {
@@ -295,6 +331,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   }
   dependsOn: [
     storageBlobDataOwnerAssignment
+    storageTableContributorAssignment
+    usersTable
     keyVaultSecretsUserAssignment
     telegramBotTokenSecret
     telegramWebhookSecret

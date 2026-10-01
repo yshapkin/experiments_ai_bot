@@ -1,4 +1,16 @@
-# Telegram Mini App V1: Hello World
+# Telegram Mini App
+
+> **Current access contract (supersedes the historical public Hello World
+> behavior below):** Static assets and non-secret `/config.json` remain public.
+> The frontend fetches the Function HTTPS base URL from runtime config and
+> submits raw Telegram `initData` only via POST body. The Function verifies
+> HMAC and freshness and checks the current active Table row before returning
+> a sanitized profile. Missing bridge/config, invalid, unregistered, pending
+> and unavailable states never render a profile. English strings (including
+> accessibility copy and the runtime document title) live in
+> `src/mini-app/copy.ts`, ready for future locale additions.
+
+## Historical V1 specification (superseded by the current access contract above)
 
 **Status:** Partial implementation, 28 September 2026. The authored frontend and local build tooling, CI static-payload validation, schema version 2 bundling with the `mini-app/` payload, the deploy-time structural gate, protected publication of the prebuilt site, and published-endpoint verification exist. The first protected deployment run, BotFather configuration, and the settings phase remain manual operator actions or out of scope. See [operational requirement 002](../operational-requirements/002-telegram-mini-app-infrastructure.md#v1-build-and-deployment-contract) for the release contract.
 

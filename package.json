@@ -1,7 +1,7 @@
 {
   "name": "experiments-ai-bot",
   "version": "1.0.0",
-  "description": "Minimal private-chat Telegram echo bot",
+  "description": "Telegram user registration and status bot with gated Mini App access",
   "main": "dist/functions/*.js",
   "scripts": {
     "test": "node --import tsx --test test/**/*.test.ts",
@@ -25,6 +25,7 @@
     "node": ">=24 <25"
   },
   "dependencies": {
+    "@azure/data-tables": "^13.3.2",
     "@azure/functions": "4.16.5",
     "@azure/identity": "^4.13.3",
     "@azure/monitor-opentelemetry": "^1.20.0",

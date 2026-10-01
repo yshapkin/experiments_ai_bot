@@ -1,5 +1,17 @@
 # Telegram Bot
 
+> **Current registration behavior (supersedes the historical V1 echo requirements below):**
+> Private `/start` creates an inactive `users` Table row (partition `user`,
+> row key decimal Telegram ID, `telegramUserId` string, UTC ISO `createdAt`,
+> boolean `isActive: false`, `isAdmin: false`). Repeats read current status
+> without overwriting operator edits. An authorized operator sets boolean
+> `isActive: true` directly; `isAdmin` has no current privileges. Only active
+> users receive a bot-owned Mini App button. Plain text is not echoed and
+> unknown commands, group and channel posts are ignored. BotFather's global
+> menu cannot be hidden per user; inactive launches are denied server-side.
+
+## Historical V1 specification (superseded by the current registration behavior above)
+
 **Last reviewed:** 2026-09-21
 
 ## Overview

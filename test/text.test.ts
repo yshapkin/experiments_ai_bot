@@ -11,18 +11,15 @@ import {
 } from "./helpers/telegram.js";
 
 describe("text handler", () => {
-  it("echoes private plain text unchanged", async () => {
+  it("ignores private plain text", async () => {
     const { bot, calls } = createBotHarness();
 
     await bot.handleUpdate(privateTextUpdate("Hello"));
 
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0]?.method, "sendMessage");
-    assert.equal(calls[0]?.payload.chat_id, 200);
-    assert.equal(calls[0]?.payload.text, "Hello");
+    assert.deepEqual(calls, []);
   });
 
-  it("does not echo start or unsupported commands", async () => {
+  it("handles start but ignores unsupported commands", async () => {
     const startHarness = createBotHarness();
     await startHarness.bot.handleUpdate(privateTextUpdate("/start"));
     assert.equal(startHarness.calls.length, 1);

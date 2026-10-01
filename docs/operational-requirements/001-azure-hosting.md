@@ -1,5 +1,13 @@
 # Azure infrastructure
 
+> **Registration addition:** The existing StorageV2 account includes the
+> `users` Table. The Function user-assigned identity has Storage Table Data
+> Contributor; operators need this data-plane role to set boolean `isActive`
+> to `true` manually. Functions receive `USER_TABLE_ENDPOINT`,
+> `AZURE_CLIENT_ID`, and `MINI_APP_URL` as settings and authenticate without
+> storage keys. Local development uses `DefaultAzureCredential` with an
+> authorized identity.
+
 **Last reviewed:** 2026-09-27
 
 ## Overview
